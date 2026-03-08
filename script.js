@@ -1,7 +1,7 @@
 /**
  * @file script.js
- * @version 12.8.0 (Cloud Native Edition)
- * @description 废弃本地文件依赖，强制 unpkg 云端抓取，保留 1.5s 静默防误触切换。
+ * @version 12.9.0 (Diagnostic Probe Edition)
+ * @description 植入底层心跳探针，实时将 AI 状态打印至移动端 UI 界面。
  */
 
 'use strict';
@@ -184,8 +184,9 @@ function updateTargetTopology(text) {
     geometry.attributes.color.needsUpdate = true;
     
     const isSpecial = (state.specialPhase === 2);
-    uiText.innerText = isSpecial ? "MATRIX_OVERRIDE: 绝对熵减 | 秩序重建" : `NODE: ${state.currentIndex + 1} / 17 | LOCK: ${text}`;
-    uiText.style.color = isSpecial ? "#FF4500" : "#FFD700";
+    // [注意：此处被下方的心跳探针覆盖显示，但在坍缩时仍会生效]
+    // uiText.innerText = isSpecial ? "MATRIX_OVERRIDE: 绝对熵减 | 秩序重建" : `NODE: ${state.currentIndex + 1} / 17 | LOCK: ${text}`;
+    // uiText.style.color = isSpecial ? "#FF4500" : "#FFD700";
 }
 
 // ==========================================
@@ -273,16 +274,25 @@ function animate() {
 }
 
 // ==========================================
-// 7. 防墙云端推断与 1.5s 物理锁
+// 7. 防墙云端推断与心跳探针注入
 // ==========================================
 const video = document.getElementById('input_video');
 
-// [极致重构：强制指向 unpkg 云端目录，彻底解决 404 错误]
 const hands = new window.Hands({locateFile: (file) => `https://unpkg.com/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
 
 const cam_mp = new window.Camera(video, {
-    onFrame: async () => { if(video.readyState >= 2 && state.isIgnited) await hands.send({image: video}); },
+    onFrame: async () => { 
+        if(video.readyState >= 2 && state.isIgnited) {
+            try {
+                await hands.send({image: video});
+            } catch (err) {
+                // 如果 AI 引擎抛出底层异常，强行打印
+                document.getElementById('status_text').innerText = "AI 引擎崩溃: " + err.message;
+                document.getElementById('status_text').style.color = "#FF0000";
+            }
+        } 
+    },
     width: 640, height: 480
 });
 
@@ -293,6 +303,16 @@ function isExtended(tipIdx, pipIdx, wrist, lm) {
 
 hands.onResults((res) => {
     if (!state.isIgnited) return;
+
+    // [心跳探针]：接管底部 UI，汇报 AI 视觉状态
+    const uiText = document.getElementById('status_text');
+    if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+        uiText.innerText = `[AI 脉搏]：已锁定 ${res.multiHandLandmarks.length} 只手`;
+        uiText.style.color = "#39FF14"; // 绿色
+    } else {
+        uiText.innerText = "[AI 脉搏]：画面扫描中，未发现骨骼点...";
+        uiText.style.color = "#FFD700"; // 黄色
+    }
 
     if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
         const lm = res.multiHandLandmarks[0];
@@ -359,7 +379,7 @@ document.getElementById('ignition_overlay').addEventListener('click', function()
     if (audioFirework) { audioFirework.volume = 0; audioFirework.play().then(()=>audioFirework.pause()).catch(()=>{}); }
     
     updateTargetTopology(TARGET_NODES[state.currentIndex]);
-    document.getElementById('status_text').innerText = "MATRIX_CORE: 神经连接已就绪 | 听觉链路开启";
+    document.getElementById('status_text').innerText = "MATRIX_CORE: 正在唤醒神经中枢...";
 
     cam_mp.start().then(() => {
         console.log("SYS_KERNEL: 云端推断模型连接成功");
