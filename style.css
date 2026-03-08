@@ -1,8 +1,14 @@
-/* style.css - 极致性能优化版 */
+/**
+ * @file style.css
+ * @version 4.2.0 (Aesthetic Peak)
+ * @description 针对高密度粒子系统优化的视觉层。
+ */
 
+/* 强制重置浏览器冗余边距，阻断回流计算 */
 *, *::before, *::after {
     box-sizing: border-box;
-    -webkit-tap-highlight-color: transparent; /* 消除移动端点击反馈 */
+    -webkit-tap-highlight-color: transparent; /* 移除移动端点击高亮 */
+    outline: none;
 }
 
 body, html {
@@ -10,13 +16,14 @@ body, html {
     padding: 0;
     width: 100vw;
     height: 100vh;
-    overflow: hidden; /* 严禁产生页面滚动，防止 Canvas 偏移 */
-    background-color: #000000; /* 纯黑底色，确保 Additive Blending 达到最高对比度 */
+    overflow: hidden; /* 严禁产生页面滚动，确保坐标系锚点绝对固定 */
+    background-color: #000000; /* 物理纯黑，为加色混合提供最高对比度 */
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif;
     user-select: none;
     -webkit-user-select: none;
 }
 
+/* GPU 渲染画布：开启硬件加速优化 */
 #output_canvas {
     display: block;
     width: 100%;
@@ -25,31 +32,44 @@ body, html {
     top: 0;
     left: 0;
     z-index: 1;
-    /* 强制 GPU 硬件加速提示 */
-    will-change: transform;
+    /* 核心：通知合成引擎为该图层分配独立显存缓冲区 */
+    will-change: transform, opacity;
+    transform: translateZ(0); 
     backface-visibility: hidden;
 }
 
+/* UI 交互信息层 */
 #ui_layer {
     position: absolute;
-    bottom: 4vh;
+    bottom: 6vh;
     width: 100%;
     z-index: 10;
     text-align: center;
-    pointer-events: none;
+    pointer-events: none; /* 物理穿透：禁止 UI 层拦截底层的 Canvas 触摸事件 */
 }
 
 #status_text {
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.45);
-    letter-spacing: 0.25em;
+    font-size: 12px;
+    font-weight: 300;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.35em; /* 增加字符间距，提升视觉的高级感与科技感 */
     margin: 0;
-    text-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
-    /* UI 动态呼吸质感，强化生命感反馈 */
-    animation: ui-breathe 4s infinite ease-in-out;
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.2);
+    /* 注入低频呼吸动效，模拟神经系统自检状态 */
+    animation: status-pulse 4s infinite ease-in-out;
 }
 
-@keyframes ui-breathe {
-    0%, 100% { opacity: 0.3; transform: scale(0.98); }
-    50% { opacity: 0.6; transform: scale(1); }
+/* 状态文本呼吸动画逻辑 */
+@keyframes status-pulse {
+    0%, 100% { 
+        opacity: 0.25; 
+        transform: scale(0.98);
+        filter: blur(0.5px);
+    }
+    50% { 
+        opacity: 0.55; 
+        transform: scale(1);
+        filter: blur(0px);
+    }
 }
