@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Synapse Matrix V4.2 | Aesthetic Peak</title>
+    <title>Synapse Matrix V5 | Kinetic Resonance</title>
     
     <link rel="stylesheet" href="style.css">
     
@@ -13,12 +13,27 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
+    <audio id="bgm_audio" loop preload="auto">
+        <source src="https://cdn.freesound.org/previews/334/334234_5121236-lq.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="sfx_switch" preload="auto">
+        <source src="https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3" type="audio/mpeg">
+    </audio>
+
     <video id="input_video" playsinline webkit-playsinline autoplay muted style="display: none;"></video>
     
     <canvas id="output_canvas"></canvas>
     
+    <div id="ignition_overlay">
+        <div class="ignition_btn">
+            SYSTEM STANDBY
+            <br>
+            <span class="ignition_sub">[ 点击屏幕 解除音频静默锁 ]</span>
+        </div>
+    </div>
+    
     <div id="ui_layer">
-        <p id="status_text">MATRIX_CORE: 待命 | 神经连接准备中</p>
+        <p id="status_text">MATRIX_CORE: 离线 | 等待点火指令</p>
     </div>
 
     <script src="script.js"></script>

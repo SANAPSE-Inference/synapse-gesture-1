@@ -1,13 +1,13 @@
 /**
  * @file style.css
- * @version 4.2.0 (Aesthetic Peak)
- * @description 针对高密度粒子系统优化的视觉层。
+ * @version 5.0.0 (Kinetic Resonance)
+ * @description 强制 GPU 硬件加速层，并引入音频物理点火锁遮罩。
  */
 
-/* 强制重置浏览器冗余边距，阻断回流计算 */
+/* 强制物理基准对齐，剥离系统冗余回流 */
 *, *::before, *::after {
     box-sizing: border-box;
-    -webkit-tap-highlight-color: transparent; /* 移除移动端点击高亮 */
+    -webkit-tap-highlight-color: transparent;
     outline: none;
 }
 
@@ -16,14 +16,14 @@ body, html {
     padding: 0;
     width: 100vw;
     height: 100vh;
-    overflow: hidden; /* 严禁产生页面滚动，确保坐标系锚点绝对固定 */
-    background-color: #000000; /* 物理纯黑，为加色混合提供最高对比度 */
+    overflow: hidden; /* 绝对禁止滚动轴越界计算 */
+    background-color: #000000; /* 纯黑底噪，为加色混合提供最强对比 */
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif;
     user-select: none;
     -webkit-user-select: none;
 }
 
-/* GPU 渲染画布：开启硬件加速优化 */
+/* GPU 三维渲染管线承载层 */
 #output_canvas {
     display: block;
     width: 100%;
@@ -32,20 +32,78 @@ body, html {
     top: 0;
     left: 0;
     z-index: 1;
-    /* 核心：通知合成引擎为该图层分配独立显存缓冲区 */
+    /* 强制释放 CPU 算力，推交 GPU 合成引擎独立处理 */
     will-change: transform, opacity;
     transform: translateZ(0); 
     backface-visibility: hidden;
 }
 
-/* UI 交互信息层 */
+/* =========================================
+   [绝对物理锁] 听觉与交互系统点火遮罩
+   ========================================= */
+#ignition_overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.85); /* 高密度暗化屏障 */
+    z-index: 100; /* 最高物理层级 */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(15px); /* 毛玻璃深度滤镜 */
+    -webkit-backdrop-filter: blur(15px);
+    transition: opacity 0.8s ease-out, visibility 0.8s ease-out;
+}
+
+/* 点火交互按钮 */
+.ignition_btn {
+    color: #FFD700;
+    font-size: 16px;
+    letter-spacing: 0.3em;
+    text-align: center;
+    padding: 25px 45px;
+    border: 1px solid rgba(255, 215, 0, 0.2);
+    background: rgba(255, 215, 0, 0.03);
+    cursor: pointer;
+    text-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
+    box-shadow: inset 0 0 20px rgba(255, 215, 0, 0.05);
+    /* 强迫视觉聚焦的呼吸频率 */
+    animation: pulse-ignition 2s infinite ease-in-out;
+}
+
+.ignition_sub {
+    display: block;
+    margin-top: 15px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.5);
+    letter-spacing: 0.2em;
+    text-shadow: none;
+}
+
+@keyframes pulse-ignition {
+    0%, 100% { 
+        transform: scale(0.98); 
+        border-color: rgba(255, 215, 0, 0.1); 
+    }
+    50% { 
+        transform: scale(1.02); 
+        border-color: rgba(255, 215, 0, 0.6); 
+        box-shadow: inset 0 0 30px rgba(255, 215, 0, 0.15), 0 0 20px rgba(255, 215, 0, 0.2);
+    }
+}
+
+/* =========================================
+   底层状态机监视器 UI
+   ========================================= */
 #ui_layer {
     position: absolute;
-    bottom: 6vh;
+    bottom: 5vh;
     width: 100%;
     z-index: 10;
     text-align: center;
-    pointer-events: none; /* 物理穿透：禁止 UI 层拦截底层的 Canvas 触摸事件 */
+    pointer-events: none; /* 强制物理穿透，防止拦截手势 */
 }
 
 #status_text {
@@ -53,23 +111,8 @@ body, html {
     font-weight: 300;
     color: rgba(255, 255, 255, 0.4);
     text-transform: uppercase;
-    letter-spacing: 0.35em; /* 增加字符间距，提升视觉的高级感与科技感 */
+    letter-spacing: 0.35em;
     margin: 0;
     text-shadow: 0 0 10px rgba(255, 215, 0, 0.2);
-    /* 注入低频呼吸动效，模拟神经系统自检状态 */
-    animation: status-pulse 4s infinite ease-in-out;
-}
-
-/* 状态文本呼吸动画逻辑 */
-@keyframes status-pulse {
-    0%, 100% { 
-        opacity: 0.25; 
-        transform: scale(0.98);
-        filter: blur(0.5px);
-    }
-    50% { 
-        opacity: 0.55; 
-        transform: scale(1);
-        filter: blur(0px);
-    }
+    transition: color 0.3s ease-out;
 }
