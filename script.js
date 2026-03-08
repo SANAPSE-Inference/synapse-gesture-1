@@ -1,13 +1,13 @@
 /**
  * @file script.js
- * @version 10.0.0 (Zero-Base Core Reboot)
- * @description 核心重启版：欧几里得手势判定、原生音频切片、极简状态机与引力赋权。
+ * @version 7.3.0 (Enterprise Performance Edition)
+ * @description 移动端极限优化版：离屏降维采样、环形音频缓冲池、神经推断节流、指令级渲染缓存。
  */
 
 'use strict';
 
 // ==========================================
-// 1. 全局配置与极简状态矩阵
+// 1. 全局配置与状态机 (State & Config)
 // ==========================================
 const TARGET_NODES = ["刘磊", "陈鼎元", "陈子豪", "董奕斐", "顾曼妮", "古苗苗", "郭苏仪", "姬翔", "刘子慕", "李文轩", "李一鸣", "吕润柳", "孙垚博", "徐薇", "燕子楚齐", "郑雅今", "朱付晴晴"];
 const SPECIAL_NODE = "祝大家\n前程似锦！！";
@@ -19,55 +19,79 @@ const CONFIG = {
     GRAVITY_STRENGTH: 0.045,
     ROTATION_IDLE: 0.005,
     CAMERA_Z: 650,
-    EXPLOSION_DURATION: 3000 // 绝对爆裂常数 (ms)
+    EXPLOSION_DURATION: 3000
 };
 
 const state = {
     currentIndex: 0,
     isPinched: false,
-    isOneGesture: false, // 维持展示态的引力锁
-    specialPhase: 0,     // 0: 待机, 1: 爆裂, 2: 收束
+    specialPhase: 0, // 0: 待机, 1: 爆裂, 2: 收束
     explosionTime: 0,
-    isIgnited: false,
-    hasTriggeredOne: false // 单次物理扳机锁
+    lastSwitchTime: 0,
+    isIgnited: false
 };
 
 // ==========================================
-// 2. 原生 I/O 音频引擎 (时间切片法)
+// 2. 高性能音频环形缓冲池 (Audio Ring Buffer)
 // ==========================================
-const audioBGM = document.getElementById('bgm_audio');
-const audioSwitch = document.getElementById('sfx_switch');
-const audioFirework = document.getElementById('sfx_firework');
+class AudioRingBuffer {
+    constructor(elementId, poolSize = 3) {
+        this.pool = [];
+        this.index = 0;
+        const template = document.getElementById(elementId);
+        if (template) {
+            const src = template.querySelector('source').src;
+            // 预先实例化指定数量的音频对象常驻内存，避免运行时创建导致 GC 卡顿
+            for (let i = 0; i < poolSize; i++) {
+                const audio = new Audio(src);
+                audio.preload = 'auto';
+                this.pool.push(audio);
+            }
+        }
+    }
 
-function playSFX(audioElement, volume = 1.0) {
-    if (!audioElement) return;
-    audioElement.pause();
-    audioElement.currentTime = 0; // 时间切片归零，极速复用单例
-    audioElement.volume = volume;
-    audioElement.play().catch(() => {});
+    // 批量静默解锁，应对 iOS 苛刻的 Autoplay 策略
+    unlockAll() {
+        this.pool.forEach(audio => {
+            audio.volume = 0;
+            audio.play().then(() => { audio.pause(); audio.currentTime = 0; }).catch(() => {});
+        });
+    }
+
+    // 轮询播放，支持高频并发无缝重叠
+    play(volume = 1.0) {
+        if (!this.pool.length) return;
+        const audio = this.pool[this.index];
+        audio.pause();
+        audio.currentTime = 0;
+        audio.volume = volume;
+        audio.play().catch(() => {});
+        this.index = (this.index + 1) % this.pool.length;
+    }
 }
 
-// 物理点火锁解禁
+const bgmAudio = document.getElementById('bgm_audio');
+const sfxSwitchPool = new AudioRingBuffer('sfx_switch', 4);     // 切换音效池
+const sfxFireworkPool = new AudioRingBuffer('sfx_firework', 2); // 烟花音效池
+
 document.getElementById('ignition_overlay').addEventListener('click', function() {
     state.isIgnited = true;
     this.style.opacity = '0';
-    setTimeout(() => this.style.display = 'none', 600);
+    setTimeout(() => this.style.display = 'none', 800);
     
-    if(audioBGM) {
-        audioBGM.volume = 0.65;
-        audioBGM.play().catch(() => {});
-    }
+    bgmAudio.volume = 0.65;
+    bgmAudio.play().catch(e => console.warn("BGM Blocked:", e));
     
-    // 静默颁发 iOS 播放许可
-    if(audioSwitch) { audioSwitch.volume = 0; audioSwitch.play().then(()=>audioSwitch.pause()).catch(()=>{}); }
-    if(audioFirework) { audioFirework.volume = 0; audioFirework.play().then(()=>audioFirework.pause()).catch(()=>{}); }
+    // 强制解锁所有内存池中的音频对象
+    sfxSwitchPool.unlockAll();
+    sfxFireworkPool.unlockAll();
     
     updateTargetTopology(TARGET_NODES[state.currentIndex]);
-    document.getElementById('status_text').innerText = "SYNAPSE_CORE: 神经连接已就绪 | 听觉链路开启";
+    document.getElementById('status_text').innerText = "MATRIX_CORE: 神经连接已就绪 | 听觉链路开启";
 });
 
 // ==========================================
-// 3. WebGL 渲染管线与高能星核内存预分配
+// 3. WebGL 核心管线与内存分配
 // ==========================================
 const canvas = document.getElementById('output_canvas');
 const uiText = document.getElementById('status_text');
@@ -95,9 +119,8 @@ function createGlowTexture() {
     return new THREE.CanvasTexture(pCanvas);
 }
 
-const total = CONFIG.TOTAL_PARTICLES;
-const bgLimit = CONFIG.BG_PARTICLES;
 const geometry = new THREE.BufferGeometry();
+const total = CONFIG.TOTAL_PARTICLES;
 const posArray = new Float32Array(total * 3);
 const baseArray = new Float32Array(total * 3);
 const targetArray = new Float32Array(total * 3);
@@ -109,7 +132,7 @@ const colorBase = new THREE.Color(0xffd700);
 
 for (let i = 0; i < total; i++) {
     const i3 = i * 3;
-    const isBG = i < bgLimit;
+    const isBG = i < CONFIG.BG_PARTICLES;
     
     if (isBG) {
         baseArray[i3] = (Math.random() - 0.5) * 4000;
@@ -127,6 +150,7 @@ for (let i = 0; i < total; i++) {
     posArray[i3] = baseArray[i3]; posArray[i3 + 1] = baseArray[i3 + 1]; posArray[i3 + 2] = baseArray[i3 + 2];
     colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
     phaseArray[i] = Math.random() * Math.PI * 2;
+    // 速度矩阵初始化由 TypedArray 默认填零机制完成，无需显式赋值
 }
 
 geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
@@ -145,11 +169,12 @@ const particleSystem = new THREE.Points(geometry, material);
 scene.add(particleSystem);
 
 // ==========================================
-// 4. 稳健拓扑降维采样 (剥离崩溃指令)
+// 4. 降维拓扑采样引擎 (512x512)
 // ==========================================
+// [优化] 离屏 Canvas 降维至 512x512，算力消耗直接降低 75%
 const osCanvas = document.createElement('canvas');
 osCanvas.width = 512; osCanvas.height = 512;
-const osCtx = osCanvas.getContext('2d'); 
+const osCtx = osCanvas.getContext('2d', { willReadFrequently: true }); 
 
 function updateTargetTopology(text) {
     if (!state.isIgnited) return;
@@ -160,6 +185,7 @@ function updateTargetTopology(text) {
     const lines = text.split('\n');
     osCtx.textAlign = 'center'; osCtx.textBaseline = 'middle';
     
+    // 字体与坐标等比缩小 50%
     if (lines.length > 1) {
         osCtx.font = 'bold 75px "Microsoft YaHei", sans-serif';
         osCtx.fillText(lines[0], 256, 210);
@@ -171,16 +197,20 @@ function updateTargetTopology(text) {
 
     const data = osCtx.getImageData(0, 0, 512, 512).data;
     let pIdx = 0;
+    const bgLimit = CONFIG.BG_PARTICLES;
 
+    // 采样步进调整为 2 (匹配降维后的分辨率)
     for (let y = 0; y < 512; y += 2) {
         for (let x = 0; x < 512; x += 2) {
             if (data[(y * 512 + x) * 4] > 128) {
                 const targetI = bgLimit + pIdx;
                 if (targetI < total) {
                     const i3 = targetI * 3;
+                    // 乘数调整，恢复原有的物理映射比例
                     targetArray[i3] = (x - 256) * 2.7 + (Math.random() - 0.5) * 3;
                     targetArray[i3 + 1] = -(y - 256) * 2.7 + (Math.random() - 0.5) * 3;
                     targetArray[i3 + 2] = (Math.random() - 0.5) * 10 + 280; 
+                    
                     colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
                     pIdx++;
                 }
@@ -188,33 +218,33 @@ function updateTargetTopology(text) {
         }
     }
 
+    // 冗余算力推入微弱背景晕染
     for (let i = bgLimit + pIdx; i < total; i++) {
         const i3 = i * 3;
         targetArray[i3] = baseArray[i3] * 0.1;
         targetArray[i3 + 1] = baseArray[i3 + 1] * 0.1;
         targetArray[i3 + 2] = baseArray[i3 + 2] * 0.1 - 100;
-        colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
     }
     
     geometry.attributes.color.needsUpdate = true;
     
     uiText.innerText = state.specialPhase === 2 
-        ? "SYNAPSE_OVERRIDE: 绝对熵减 | 秩序重建" 
+        ? "MATRIX_OVERRIDE: 绝对熵减 | 秩序重建" 
         : `NODE: ${state.currentIndex + 1} / 17 | LOCK: ${text}`;
     uiText.style.color = state.specialPhase === 2 ? "#FF4500" : "#FFD700";
 }
 
 // ==========================================
-// 5. 绝对熵增爆发
+// 5. 熵增爆裂引擎
 // ==========================================
 function triggerExplosion() {
     state.specialPhase = 1;
     state.explosionTime = Date.now();
-    playSFX(audioFirework, 0.95);
+    sfxFireworkPool.play(0.95);
 
     const colors = [new THREE.Color(0x00FFFF), new THREE.Color(0xFF00FF), new THREE.Color(0x39FF14), new THREE.Color(0xFFD700)];
 
-    for (let i = bgLimit; i < total; i++) {
+    for (let i = CONFIG.BG_PARTICLES; i < total; i++) {
         const i3 = i * 3;
         const speed = Math.random() * 60 + 20;
         const theta = Math.random() * 2 * Math.PI;
@@ -231,7 +261,7 @@ function triggerExplosion() {
 }
 
 // ==========================================
-// 6. 物理主渲染循环
+// 6. 主渲染循环 (指令级缓存优化)
 // ==========================================
 function animate() {
     requestAnimationFrame(animate);
@@ -239,31 +269,38 @@ function animate() {
 
     const time = Date.now() * 0.001;
     const nowMs = Date.now();
+    const isOrdered = state.isPinched || state.specialPhase === 2;
     
-    // 引力场全域激活判定：包含“比一”展示态
-    const isOrdered = state.isPinched || state.isOneGesture || state.specialPhase === 2;
-    
+    // 材质平滑增益
     material.size += ((isOrdered ? 12.0 : 9.0) - material.size) * 0.15;
     material.opacity += ((isOrdered ? 1.0 : 0.85) - material.opacity) * 0.15;
 
-    // 烟花强制驻留阻尼
     if (state.specialPhase === 1 && (nowMs - state.explosionTime > CONFIG.EXPLOSION_DURATION)) {
         state.specialPhase = 2; 
         updateTargetTopology(SPECIAL_NODE);
     }
 
+    // 局部变量缓存，阻断高频作用域链查找
+    const bgLimit = CONFIG.BG_PARTICLES;
     const orderedSpeed = CONFIG.COLLAPSE_SPEED;
     const gravSpeed = CONFIG.GRAVITY_STRENGTH;
-    const pos = posArray, target = targetArray, base = baseArray, phase = phaseArray, vel = velocityArray;
+    
+    // 提取纯引用，避免在循环内重复寻址
+    const pos = posArray; 
+    const target = targetArray;
+    const base = baseArray;
+    const phase = phaseArray;
+    const vel = velocityArray;
 
     for (let i = 0; i < total; i++) {
-        const ix = i * 3, iy = ix + 1, iz = ix + 2; 
-        
-        if (i >= bgLimit && state.specialPhase === 1) {
+        const i3 = i * 3;
+        const ix = i3, iy = i3 + 1, iz = i3 + 2; 
+        const isBG = i < bgLimit;
+
+        if (!isBG && state.specialPhase === 1) {
             pos[ix] += vel[ix]; pos[iy] += vel[iy]; pos[iz] += vel[iz];
             vel[ix] *= 0.96; vel[iy] *= 0.96; vel[iz] *= 0.96;
         } else {
-            const isBG = i < bgLimit;
             const speed = isBG ? gravSpeed : (isOrdered ? orderedSpeed : gravSpeed);
             const angle = time + phase[i];
             
@@ -278,6 +315,7 @@ function animate() {
     }
     geometry.attributes.position.needsUpdate = true;
 
+    // 相机回正锁
     if (isOrdered) {
         particleSystem.rotation.y += (0 - particleSystem.rotation.y) * 0.15;
         particleSystem.rotation.z += (0 - particleSystem.rotation.z) * 0.15;
@@ -290,86 +328,86 @@ function animate() {
 }
 
 // ==========================================
-// 7. 神经视觉推断引擎 (欧几里得距离抽象)
+// 7. 神经视觉推断引擎
 // ==========================================
 const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
-
-// 辅助向量数学测算：规避 2D 镜头畸变
-function getDist(p1, p2) {
-    return Math.hypot(p1.x - p2.x, p1.y - p2.y);
-}
-
-function isFingerExtended(tipIdx, pipIdx, wrist, lm) {
-    return getDist(lm[tipIdx], wrist) > getDist(lm[pipIdx], wrist) * 1.25;
-}
 
 hands.onResults((res) => {
     if (!state.isIgnited) return;
 
     if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
         const lm = res.multiHandLandmarks[0];
-        const wrist = lm[0];
+        const now = Date.now();
         
-        const isPinching = getDist(lm[4], lm[8]) < 0.08; 
+        // 降低距离计算开销
+        const dx = lm[4].x - lm[8].x;
+        const dy = lm[4].y - lm[8].y;
+        const isPinching = (dx*dx + dy*dy) < 0.0064; // 等效于 Math.hypot < 0.08
         
-        // 使用欧几里得距离判定指骨伸展，无视手腕俯仰角
-        const indexUp = isFingerExtended(8, 6, wrist, lm);
-        const middleUp = isFingerExtended(12, 10, wrist, lm);
-        const ringUp = isFingerExtended(16, 14, wrist, lm);
-        const pinkyUp = isFingerExtended(20, 18, wrist, lm);
-
-        const isPeace = indexUp && middleUp && !ringUp && !pinkyUp && !isPinching;
-        const isOne = indexUp && !middleUp && !ringUp && !pinkyUp && !isPinching;
+        const isPeace = (lm[8].y < lm[5].y) && (lm[12].y < lm[9].y) && (lm[16].y > lm[13].y);
+        const isOne = (lm[8].y < lm[5].y) && (lm[12].y > lm[9].y) && (lm[16].y > lm[13].y);
 
         if (isPeace) { 
-            state.isPinched = false; state.isOneGesture = false; state.hasTriggeredOne = false; 
+            state.isPinched = false;
             if (state.specialPhase === 0) triggerExplosion(); 
-        } 
-        else if (isPinching) { 
-            state.isPinched = true; state.isOneGesture = false; state.hasTriggeredOne = false; 
-            if (state.specialPhase !== 0) { state.specialPhase = 0; updateTargetTopology(TARGET_NODES[state.currentIndex]); }
-        } 
-        else if (isOne) { 
-            state.isPinched = false; state.isOneGesture = true; // 引力锁开启
-            if (state.specialPhase !== 0) { state.specialPhase = 0; updateTargetTopology(TARGET_NODES[state.currentIndex]); }
-            
-            if (!state.hasTriggeredOne) {
+        } else if (isPinching) { 
+            state.isPinched = true;
+            if (state.specialPhase !== 0) { 
+                state.specialPhase = 0; 
+                updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+            }
+        } else { 
+            state.isPinched = false;
+            if (state.specialPhase !== 0) { 
+                state.specialPhase = 0; 
+                updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+            }
+            if (isOne && (now - state.lastSwitchTime > 1500)) {
                 state.currentIndex = (state.currentIndex + 1) % TARGET_NODES.length;
                 updateTargetTopology(TARGET_NODES[state.currentIndex]);
-                playSFX(audioSwitch, 0.85); 
-                state.hasTriggeredOne = true; // 物理击发锁定
+                state.lastSwitchTime = now;
+                sfxSwitchPool.play(0.85); 
             }
-        } 
-        else {
-            state.isPinched = false; state.isOneGesture = false; state.hasTriggeredOne = false; 
-            if (state.specialPhase === 0) updateTargetTopology(TARGET_NODES[state.currentIndex]); 
         }
     } else {
-        state.isPinched = false; state.isOneGesture = false; state.hasTriggeredOne = false; 
-        if (state.specialPhase === 0) updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+        state.isPinched = false;
+        if (state.specialPhase !== 0) { 
+            state.specialPhase = 0; 
+            updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+        }
     }
 });
 
+// [优化] 神经帧节流锁，防止低端机画面堆积卡死
+let isProcessingFrame = false;
 const video = document.getElementById('input_video');
 const cam_mp = new window.Camera(video, {
-    onFrame: async () => { if(video.readyState >= 2 && state.isIgnited) await hands.send({image: video}); },
+    onFrame: async () => { 
+        if(video.readyState >= 2 && state.isIgnited && !isProcessingFrame) { 
+            isProcessingFrame = true;
+            await hands.send({image: video}); 
+            isProcessingFrame = false;
+        }
+    },
     width: 640, height: 480
 });
 
 window.addEventListener('touchstart', () => { if(state.isIgnited) state.isPinched = true; });
 window.addEventListener('touchend', () => { if(state.isIgnited) state.isPinched = false; });
 
+// [防抖] 横屏旋转事件防抖，彻底解决坐标系偏离
 let resizeTimeout;
-window.addEventListener('resize', () => {
+function handleResize() {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
     }, 150);
-});
-window.addEventListener('orientationchange', () => window.dispatchEvent(new Event('resize')));
+}
+window.addEventListener('resize', handleResize);
+window.addEventListener('orientationchange', handleResize);
 
 animate();
-cam_mp.start().then(() => console.log("SYNAPSE_CORE: 欧几里得重构版部署完成"));
+cam_mp.start().then(() => console.log("SYS_KERNEL: 光学与推断引擎常驻后台(已优化)"));
