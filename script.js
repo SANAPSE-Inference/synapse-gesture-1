@@ -1,7 +1,7 @@
 /**
  * @file script.js
- * @version 11.0.0 (Local Override & Silent Switch Edition)
- * @description 终极部署版：模型100%本地化防墙，1.5秒静默单发切换，握拳引力展示。
+ * @version 12.8.0 (Cloud Native Edition)
+ * @description 废弃本地文件依赖，强制 unpkg 云端抓取，保留 1.5s 静默防误触切换。
  */
 
 'use strict';
@@ -32,7 +32,6 @@ const state = {
     currentTopology: null 
 };
 
-// [新增] 1.5秒积分器专用变量
 let oneGestureStartTime = 0;
 let isOneGestureActive = false;
 
@@ -217,7 +216,7 @@ function triggerExplosion() {
 }
 
 // ==========================================
-// 6. 主渲染循环 (剥离展示态引力)
+// 6. 主渲染循环
 // ==========================================
 function animate() {
     requestAnimationFrame(animate);
@@ -226,7 +225,6 @@ function animate() {
     const time = Date.now() * 0.001;
     const nowMs = Date.now();
     
-    // [致命重构] 引力剥离：仅在捏合或特殊收束态下，引力才会生效。比"一"时画面维持绝对散落。
     const isOrdered = state.isPinched || state.specialPhase === 2;
     
     material.size += ((isOrdered ? 12.0 : 9.0) - material.size) * 0.15;
@@ -275,12 +273,12 @@ function animate() {
 }
 
 // ==========================================
-// 7. 防墙本地推断与防串联延时锁定
+// 7. 防墙云端推断与 1.5s 物理锁
 // ==========================================
 const video = document.getElementById('input_video');
 
-// [物理级网络防封锁] 剥离 jsdelivr，强制模型从本地根目录读取
-const hands = new window.Hands({locateFile: (file) => `./${file}`});
+// [极致重构：强制指向 unpkg 云端目录，彻底解决 404 错误]
+const hands = new window.Hands({locateFile: (file) => `https://unpkg.com/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
 
 const cam_mp = new window.Camera(video, {
@@ -322,27 +320,23 @@ hands.onResults((res) => {
             state.isPinched = false; 
             if (state.specialPhase !== 0) { state.specialPhase = 0; updateTargetTopology(TARGET_NODES[state.currentIndex]); }
             
-            // 1.5秒延迟静默切换逻辑
             if (!isOneGestureActive) {
                 isOneGestureActive = true;
-                oneGestureStartTime = Date.now(); // 开始计时
+                oneGestureStartTime = Date.now(); 
             }
             
-            // 若保持 1 超过 1.5s 且未锁死
             if (isOneGestureActive && !state.hasTriggeredOne && (Date.now() - oneGestureStartTime >= 1500)) {
                 state.currentIndex = (state.currentIndex + 1) % TARGET_NODES.length;
-                updateTargetTopology(TARGET_NODES[state.currentIndex]); // 仅底层数据切换，无引力坍缩
+                updateTargetTopology(TARGET_NODES[state.currentIndex]); 
                 playSFX(audioSwitch, 0.85); 
-                state.hasTriggeredOne = true; // 绝对锁死，防止连续切换
+                state.hasTriggeredOne = true; 
             }
         } 
         else {
-            // 回归基态（张手），松开所有锁钥
             state.isPinched = false; isOneGestureActive = false; state.hasTriggeredOne = false; 
             if (state.specialPhase === 0) updateTargetTopology(TARGET_NODES[state.currentIndex]); 
         }
     } else {
-        // 空白画面，松开所有锁钥
         state.isPinched = false; isOneGestureActive = false; state.hasTriggeredOne = false; 
         if (state.specialPhase === 0) updateTargetTopology(TARGET_NODES[state.currentIndex]); 
     }
@@ -368,7 +362,7 @@ document.getElementById('ignition_overlay').addEventListener('click', function()
     document.getElementById('status_text').innerText = "MATRIX_CORE: 神经连接已就绪 | 听觉链路开启";
 
     cam_mp.start().then(() => {
-        console.log("SYS_KERNEL: 本地推断模型捕获成功");
+        console.log("SYS_KERNEL: 云端推断模型连接成功");
     }).catch((e) => {
         console.error("SYS_ERR: 摄像头静默挂起", e);
         document.getElementById('status_text').innerText = "SYS_ERR: 传感器物理受阻";

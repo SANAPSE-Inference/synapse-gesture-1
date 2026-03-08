@@ -3,27 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Synapse Matrix V10.1 | Hardware Override</title>
+    <title>Synapse Matrix V12.8 | Cloud Override</title>
     
     <link rel="stylesheet" href="style.css">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
-    <audio id="bgm_audio" loop preload="auto">
-        <source src="bgm.mp3?v=v10.1_stable" type="audio/mpeg">
-    </audio>
-    
-    <audio id="sfx_switch" preload="auto">
-        <source src="switch.mp3?v=v10.1_stable" type="audio/mpeg">
-    </audio>
-    
-    <audio id="sfx_firework" preload="auto">
-        <source src="firework.mp3?v=v10.1_stable" type="audio/mpeg">
-    </audio>
+    <audio id="bgm_audio" loop preload="auto"><source src="bgm.mp3?v=stable" type="audio/mpeg"></audio>
+    <audio id="sfx_switch" preload="auto"><source src="switch.mp3?v=stable" type="audio/mpeg"></audio>
+    <audio id="sfx_firework" preload="auto"><source src="firework.mp3?v=stable" type="audio/mpeg"></audio>
 
     <video id="input_video" playsinline webkit-playsinline autoplay muted style="position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; z-index: -1;"></video>
     
