@@ -1,59 +1,77 @@
 /**
  * @file script.js
- * @version 6.0.0 (Entropy Override - Final Production)
- * @description 首席架构师级：高密度流体、动态材质增益、音频物理锁与【爆裂-收束】状态机。
+ * @version 7.1.0 (Senior Performance Optimized)
+ * @description 极致优化版：零GC字模采样、音频轮询池、算力指令级缓存。
  */
 
 'use strict';
 
-// [1] 矩阵节点池
 const TARGET_NODES = ["刘磊", "陈鼎元", "陈子豪", "董奕斐", "顾曼妮", "古苗苗", "郭苏仪", "姬翔", "刘子慕", "李文轩", "李一鸣", "吕润柳", "孙垚博", "徐薇", "燕子楚齐", "郑雅今", "朱付晴晴"];
 const SPECIAL_NODE = "祝大家\n前程似锦！！";
 
-// [2] 物理常数与算力锁定 (14,000 为移动端 60FPS 绝对安全线)
 const CONFIG = {
     TOTAL_PARTICLES: 14000,
     TEXT_PARTICLES: 9000, 
     BG_PARTICLES: 5000,   
-    COLLAPSE_SPEED: 0.12,    // 收束引力
-    GRAVITY_STRENGTH: 0.045, // 游走引力
+    COLLAPSE_SPEED: 0.12,
+    GRAVITY_STRENGTH: 0.045,
     ROTATION_IDLE: 0.005,
-    CAMERA_Z: 650
+    CAMERA_Z: 650,
+    EXPLOSION_DURATION: 3000
 };
 
-// [3] 多维互斥状态机
 const state = {
     currentIndex: 0,
     isPinched: false,
-    specialPhase: 0, // 0: 待机, 1: 绝对熵增(爆裂), 2: 绝对熵减(收束)
+    specialPhase: 0, // 0: 待机, 1: 爆裂, 2: 收束
     explosionTime: 0,
     lastSwitchTime: 0,
     isIgnited: false
 };
 
-// [4] 音频硬件接口 (全本地零延迟)
-const bgmAudio = document.getElementById('bgm_audio');
-const sfxSwitch = document.getElementById('sfx_switch');
-const sfxFirework = document.getElementById('sfx_firework');
+// --- [优化] 音频并发池 (Audio Pool) 杜绝 DOM 克隆导致的内存泄漏 ---
+class AudioPool {
+    constructor(templateId, size = 3) {
+        this.pool = [];
+        this.index = 0;
+        const template = document.getElementById(templateId);
+        if (template) {
+            const src = template.querySelector('source').src;
+            for (let i = 0; i < size; i++) {
+                const audio = new Audio(src);
+                audio.preload = 'auto';
+                this.pool.push(audio);
+            }
+        }
+    }
+    play(volume = 1.0) {
+        if (!this.pool.length) return;
+        const audio = this.pool[this.index];
+        audio.volume = volume;
+        audio.currentTime = 0;
+        audio.play().catch(()=>{});
+        this.index = (this.index + 1) % this.pool.length;
+    }
+}
 
-// 物理点火锁：强行解禁移动端 Audio Context
+const bgmAudio = document.getElementById('bgm_audio');
+// 预实例化音频池：切换音效池(容量3)，烟花音效池(容量2)
+const sfxSwitchPool = new AudioPool('sfx_switch', 3);
+const sfxFireworkPool = new AudioPool('sfx_firework', 2);
+
 document.getElementById('ignition_overlay').addEventListener('click', function() {
     state.isIgnited = true;
-    
-    // 视觉层退场
     this.style.opacity = '0';
     setTimeout(() => this.style.display = 'none', 800);
     
-    // 强制接管音频线程
     bgmAudio.volume = 0.65;
-    bgmAudio.play().catch(e => console.warn("SYS: BGM调用被系统级拦截", e));
+    bgmAudio.play().catch(e => console.warn("BGM Error:", e));
     
-    // 初始化文本拓扑
     updateTargetTopology(TARGET_NODES[state.currentIndex]);
     document.getElementById('status_text').innerText = "MATRIX_CORE: 神经连接已就绪 | 听觉链路开启";
 });
 
-// [5] WebGL 渲染管线初始化
+// --- WebGL 渲染管线 ---
 const canvas = document.getElementById('output_canvas');
 const uiText = document.getElementById('status_text');
 const scene = new THREE.Scene();
@@ -66,7 +84,6 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: fals
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
-// 材质贴图：极致平滑的高斯光晕，剥离实心白点
 function createGlowTexture() {
     const pCanvas = document.createElement('canvas');
     pCanvas.width = 64; pCanvas.height = 64;
@@ -81,28 +98,27 @@ function createGlowTexture() {
     return new THREE.CanvasTexture(pCanvas);
 }
 
-// [6] 内存预分配：动能与色彩矩阵
+// --- 内存预分配 ---
 const geometry = new THREE.BufferGeometry();
 const posArray = new Float32Array(CONFIG.TOTAL_PARTICLES * 3);
 const baseArray = new Float32Array(CONFIG.TOTAL_PARTICLES * 3);
 const targetArray = new Float32Array(CONFIG.TOTAL_PARTICLES * 3);
 const phaseArray = new Float32Array(CONFIG.TOTAL_PARTICLES); 
-const velocityArray = new Float32Array(CONFIG.TOTAL_PARTICLES * 3); // 爆炸动能数组
-const colorArray = new Float32Array(CONFIG.TOTAL_PARTICLES * 3);    // 独立色彩缓冲
+const velocityArray = new Float32Array(CONFIG.TOTAL_PARTICLES * 3); 
+const colorArray = new Float32Array(CONFIG.TOTAL_PARTICLES * 3);    
 
-const colorBase = new THREE.Color(0xffd700); // 默认金黄
+const colorBase = new THREE.Color(0xffd700);
 
 for (let i = 0; i < CONFIG.TOTAL_PARTICLES; i++) {
     const i3 = i * 3;
     const isBG = i < CONFIG.BG_PARTICLES;
     
-    // 背景粒子 Z 轴前推，显著提升流体暗流可见度
     if (isBG) {
         baseArray[i3] = (Math.random() - 0.5) * 4000;
         baseArray[i3 + 1] = (Math.random() - 0.5) * 4000;
         baseArray[i3 + 2] = (Math.random() - 0.5) * 800 - 200; 
     } else {
-        const r = 220 * Math.cbrt(Math.random());
+        const r = 140 * Math.cbrt(Math.random());
         const theta = Math.random() * 2 * Math.PI;
         const phi = Math.acos(2 * Math.random() - 1);
         baseArray[i3] = r * Math.sin(phi) * Math.cos(theta);
@@ -110,14 +126,8 @@ for (let i = 0; i < CONFIG.TOTAL_PARTICLES; i++) {
         baseArray[i3 + 2] = r * Math.cos(phi);
     }
     
-    posArray[i3] = baseArray[i3];
-    posArray[i3 + 1] = baseArray[i3 + 1];
-    posArray[i3 + 2] = baseArray[i3 + 2];
-    
-    colorArray[i3] = colorBase.r;
-    colorArray[i3+1] = colorBase.g;
-    colorArray[i3+2] = colorBase.b;
-    
+    posArray[i3] = baseArray[i3]; posArray[i3 + 1] = baseArray[i3 + 1]; posArray[i3 + 2] = baseArray[i3 + 2];
+    colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
     phaseArray[i] = Math.random() * Math.PI * 2;
     velocityArray[i3] = velocityArray[i3+1] = velocityArray[i3+2] = 0;
 }
@@ -126,110 +136,107 @@ geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
 geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
 
 const material = new THREE.PointsMaterial({
-    size: 6.5, // 基础暗淡尺寸
+    size: 9.0, 
     map: createGlowTexture(),
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     transparent: true,
-    vertexColors: true, // 开启独立色彩渲染
-    opacity: 0.6
+    vertexColors: true,
+    opacity: 0.85 
 });
 const particleSystem = new THREE.Points(geometry, material);
 scene.add(particleSystem);
 
-// [7] 高密度字模采样 (Stride = 4 榨干分辨率)
+// --- [优化] 离屏 Canvas 单例，杜绝 GC 卡顿 ---
+const osCanvas = document.createElement('canvas');
+osCanvas.width = 1024; osCanvas.height = 1024;
+// willReadFrequently 强制浏览器优化 getImageData 的底层调用
+const osCtx = osCanvas.getContext('2d', { willReadFrequently: true }); 
+
 function updateTargetTopology(text) {
     if (!state.isIgnited) return;
 
-    const tCanvas = document.createElement('canvas');
-    const tCtx = tCanvas.getContext('2d');
-    tCanvas.width = 1024; tCanvas.height = 1024;
-    tCtx.fillStyle = '#000'; tCtx.fillRect(0, 0, 1024, 1024);
-    tCtx.fillStyle = '#FFF';
+    osCtx.fillStyle = '#000'; osCtx.fillRect(0, 0, 1024, 1024);
+    osCtx.fillStyle = '#FFF';
     
     const lines = text.split('\n');
-    tCtx.textAlign = 'center'; tCtx.textBaseline = 'middle';
+    osCtx.textAlign = 'center'; osCtx.textBaseline = 'middle';
     
     if (lines.length > 1) {
-        tCtx.font = 'bold 150px "Microsoft YaHei", sans-serif';
-        tCtx.fillText(lines[0], 512, 420);
-        tCtx.fillText(lines[1], 512, 580);
+        osCtx.font = 'bold 150px "Microsoft YaHei", sans-serif';
+        osCtx.fillText(lines[0], 512, 420);
+        osCtx.fillText(lines[1], 512, 580);
     } else {
-        tCtx.font = 'bold 250px "Microsoft YaHei", sans-serif';
-        tCtx.fillText(text, 512, 512);
+        osCtx.font = 'bold 250px "Microsoft YaHei", sans-serif';
+        osCtx.fillText(text, 512, 512);
     }
 
-    const data = tCtx.getImageData(0, 0, 1024, 1024).data;
-    const points = [];
+    const data = osCtx.getImageData(0, 0, 1024, 1024).data;
+    
+    let pIdx = 0;
+    const bgLimit = CONFIG.BG_PARTICLES;
+    const total = CONFIG.TOTAL_PARTICLES;
+
+    // [优化] 直接计算目标矩阵，废除临时对象数组分配
     for (let y = 0; y < 1024; y += 4) {
         for (let x = 0; x < 1024; x += 4) {
             if (data[(y * 1024 + x) * 4] > 128) {
-                points.push({ x: (x - 512) * 1.35, y: -(y - 512) * 1.35 });
+                const targetI = bgLimit + pIdx;
+                if (targetI < total) {
+                    const i3 = targetI * 3;
+                    targetArray[i3] = (x - 512) * 1.35 + (Math.random() - 0.5) * 3;
+                    targetArray[i3 + 1] = -(y - 512) * 1.35 + (Math.random() - 0.5) * 3;
+                    targetArray[i3 + 2] = (Math.random() - 0.5) * 10 + 280; 
+                    
+                    colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
+                    pIdx++;
+                }
             }
         }
     }
 
-    const pLen = points.length;
-    let pIdx = 0;
-    for (let i = CONFIG.BG_PARTICLES; i < CONFIG.TOTAL_PARTICLES; i++) {
+    // 冗余算力推入微弱背景晕染
+    for (let i = bgLimit + pIdx; i < total; i++) {
         const i3 = i * 3;
-        if (pIdx < pLen) {
-            targetArray[i3] = points[pIdx].x + (Math.random() - 0.5) * 3;
-            targetArray[i3 + 1] = points[pIdx].y + (Math.random() - 0.5) * 3;
-            targetArray[i3 + 2] = (Math.random() - 0.5) * 10 + 280; // Z轴强化
-            
-            // 恢复统一高亮金黄
-            colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
-            pIdx++;
-        } else {
-            targetArray[i3] = baseArray[i3] * 0.1;
-            targetArray[i3 + 1] = baseArray[i3 + 1] * 0.1;
-            targetArray[i3 + 2] = baseArray[i3 + 2] * 0.1 - 100;
-        }
+        targetArray[i3] = baseArray[i3] * 0.1;
+        targetArray[i3 + 1] = baseArray[i3 + 1] * 0.1;
+        targetArray[i3 + 2] = baseArray[i3 + 2] * 0.1 - 100;
     }
+    
     geometry.attributes.color.needsUpdate = true;
     
-    if (state.specialPhase === 2) {
-        uiText.innerText = "MATRIX_OVERRIDE: 绝对熵减 | 秩序重建";
-        uiText.style.color = "#FF4500";
-    } else {
-        uiText.innerText = `NODE: ${state.currentIndex + 1} / 17 | LOCK: ${text}`;
-        uiText.style.color = "#FFD700";
-    }
+    uiText.innerText = state.specialPhase === 2 
+        ? "MATRIX_OVERRIDE: 绝对熵减 | 秩序重建" 
+        : `NODE: ${state.currentIndex + 1} / 17 | LOCK: ${text}`;
+    uiText.style.color = state.specialPhase === 2 ? "#FF4500" : "#FFD700";
 }
 
-// [8] 爆炸引擎：触发绝对熵增
+// --- 爆炸引擎 ---
 function triggerExplosion() {
     state.specialPhase = 1;
     state.explosionTime = Date.now();
     
-    // SFX 点火
-    sfxFirework.volume = 0.9;
-    sfxFirework.currentTime = 0;
-    sfxFirework.play().catch(()=>{});
+    sfxFireworkPool.play(0.95);
 
-    // 随机赛博色彩池
     const colors = [new THREE.Color(0x00FFFF), new THREE.Color(0xFF00FF), new THREE.Color(0x39FF14), new THREE.Color(0xFFD700)];
 
     for (let i = CONFIG.BG_PARTICLES; i < CONFIG.TOTAL_PARTICLES; i++) {
         const i3 = i * 3;
-        // 赋予爆炸初速度 (球坐标扩散)
-        const speed = Math.random() * 45 + 10;
+        const speed = Math.random() * 60 + 20;
         const theta = Math.random() * 2 * Math.PI;
         const phi = Math.acos(2 * Math.random() - 1);
         
         velocityArray[i3] = speed * Math.sin(phi) * Math.cos(theta);
         velocityArray[i3+1] = speed * Math.sin(phi) * Math.sin(theta);
-        velocityArray[i3+2] = speed * Math.cos(phi) + (Math.random() * 20); // 略微向前喷射
+        velocityArray[i3+2] = speed * Math.cos(phi) + (Math.random() * 30); 
 
-        // 随机篡改颜色
         const c = colors[Math.floor(Math.random() * colors.length)];
         colorArray[i3] = c.r; colorArray[i3+1] = c.g; colorArray[i3+2] = c.b;
     }
     geometry.attributes.color.needsUpdate = true;
 }
 
-// [9] 主物理渲染循环
+// --- [优化] 主渲染循环：变量提取与指令缓存 ---
 function animate() {
     requestAnimationFrame(animate);
     if (!state.isIgnited) { renderer.render(scene, camera); return; }
@@ -240,36 +247,38 @@ function animate() {
     
     const isOrdered = state.isPinched || state.specialPhase === 2;
     
-    // 【材质动态增益】：不加粒子，提升亮度
-    const targetSize = isOrdered ? 12.0 : 6.5; 
-    const targetOpacity = isOrdered ? 1.0 : 0.6;
+    const targetSize = isOrdered ? 12.0 : 9.0; 
+    const targetOpacity = isOrdered ? 1.0 : 0.85;
     material.size += (targetSize - material.size) * 0.15;
     material.opacity += (targetOpacity - material.opacity) * 0.15;
 
-    // 状态机流转：爆裂 -> 收束
-    if (state.specialPhase === 1 && (nowMs - state.explosionTime > 850)) {
-        state.specialPhase = 2; // 进入收束态
+    if (state.specialPhase === 1 && (nowMs - state.explosionTime > CONFIG.EXPLOSION_DURATION)) {
+        state.specialPhase = 2; 
         updateTargetTopology(SPECIAL_NODE);
     }
 
-    for (let i = 0; i < CONFIG.TOTAL_PARTICLES; i++) {
+    const total = CONFIG.TOTAL_PARTICLES;
+    const bgLimit = CONFIG.BG_PARTICLES;
+    const orderedColSpeed = CONFIG.COLLAPSE_SPEED;
+    const gravSpeed = CONFIG.GRAVITY_STRENGTH;
+
+    for (let i = 0; i < total; i++) {
         const i3 = i * 3;
-        const isBG = i < CONFIG.BG_PARTICLES;
-        const phase = phaseArray[i];
+        const isBG = i < bgLimit;
 
         if (!isBG && state.specialPhase === 1) {
-            // [熵增态]：惯性飞行与空气阻力
             pos[i3] += velocityArray[i3];
             pos[i3+1] += velocityArray[i3+1];
             pos[i3+2] += velocityArray[i3+2];
-            velocityArray[i3] *= 0.92; 
-            velocityArray[i3+1] *= 0.92;
-            velocityArray[i3+2] *= 0.92;
+            velocityArray[i3] *= 0.96; 
+            velocityArray[i3+1] *= 0.96;
+            velocityArray[i3+2] *= 0.96;
         } else {
-            // [流体/收束态]：引力积分
-            const speed = isBG ? CONFIG.GRAVITY_STRENGTH : (isOrdered ? CONFIG.COLLAPSE_SPEED : CONFIG.GRAVITY_STRENGTH);
-            const tx = (isOrdered && !isBG) ? targetArray[i3] : (baseArray[i3] + Math.sin(time + phase) * 45);
-            const ty = (isOrdered && !isBG) ? targetArray[i3+1] : (baseArray[i3+1] + Math.cos(time + phase) * 45);
+            const speed = isBG ? gravSpeed : (isOrdered ? orderedColSpeed : gravSpeed);
+            // 缓存相加变量，减少 JS 虚拟机计算负担
+            const angle = time + phaseArray[i];
+            const tx = (isOrdered && !isBG) ? targetArray[i3] : (baseArray[i3] + Math.sin(angle) * 45);
+            const ty = (isOrdered && !isBG) ? targetArray[i3+1] : (baseArray[i3+1] + Math.cos(angle) * 45);
             const tz = (isOrdered && !isBG) ? targetArray[i3+2] : baseArray[i3+2];
 
             pos[i3] += (tx - pos[i3]) * speed;
@@ -279,7 +288,6 @@ function animate() {
     }
     geometry.attributes.position.needsUpdate = true;
 
-    // 相位锁：收束时绝对平稳，游走时深空自转
     if (isOrdered) {
         particleSystem.rotation.y += (0 - particleSystem.rotation.y) * 0.15;
         particleSystem.rotation.z += (0 - particleSystem.rotation.z) * 0.15;
@@ -291,9 +299,9 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// [10] 端侧手势神经网络
+// --- 手势识别逻辑 ---
 const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
 
 hands.onResults((res) => {
     if (!state.isIgnited) return;
@@ -303,21 +311,21 @@ hands.onResults((res) => {
         const now = Date.now();
         
         const distPinch = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-        const isPinching = distPinch < 0.075;
+        const isPinching = distPinch < 0.08; 
         
         const isPeace = (lm[8].y < lm[5].y) && (lm[12].y < lm[9].y) && (lm[16].y > lm[13].y);
         const isOne = (lm[8].y < lm[5].y) && (lm[12].y > lm[9].y) && (lm[16].y > lm[13].y);
 
-        if (isPeace) { // 优先级 1: 触发烟花爆裂
+        if (isPeace) { 
             state.isPinched = false;
             if (state.specialPhase === 0) { triggerExplosion(); }
-        } else if (isPinching) { // 优先级 2: 名字坍缩
+        } else if (isPinching) { 
             state.isPinched = true;
             if (state.specialPhase !== 0) { 
                 state.specialPhase = 0; 
                 updateTargetTopology(TARGET_NODES[state.currentIndex]); 
             }
-        } else { // 优先级 3: 节点切换
+        } else { 
             state.isPinched = false;
             if (state.specialPhase !== 0) { 
                 state.specialPhase = 0; 
@@ -328,11 +336,7 @@ hands.onResults((res) => {
                 state.currentIndex = (state.currentIndex + 1) % TARGET_NODES.length;
                 updateTargetTopology(TARGET_NODES[state.currentIndex]);
                 state.lastSwitchTime = now;
-                
-                // [SFX] 节点短促切换音
-                sfxSwitch.volume = 0.8;
-                sfxSwitch.currentTime = 0;
-                sfxSwitch.play().catch(()=>{});
+                sfxSwitchPool.play(0.85); // 触发无缝音效
             }
         }
     } else {
@@ -344,7 +348,6 @@ hands.onResults((res) => {
     }
 });
 
-// [11] 硬件启动序列
 const video = document.getElementById('input_video');
 const cam_mp = new window.Camera(video, {
     onFrame: async () => { if(video.readyState >= 2 && state.isIgnited) await hands.send({image: video}); },
@@ -359,4 +362,4 @@ window.addEventListener('resize', () => {
 });
 
 animate();
-cam_mp.start().then(() => console.log("SYS_KERNEL: 光学与推断引擎常驻后台"));
+cam_mp.start().then(() => console.log("SYS_KERNEL: 光学与推断引擎就绪"));
