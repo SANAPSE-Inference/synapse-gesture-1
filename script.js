@@ -1,9 +1,3 @@
-/**
- * @file script.js
- * @description 核心逻辑：3D粒子物理场引擎与手势状态机
- * @author Principal Software Engineer
- */
-
 'use strict';
 
 const TARGET_NODES = [
@@ -14,23 +8,21 @@ const TARGET_NODES = [
 ];
 
 const CONFIG = {
-    PARTICLE_COUNT: 15000, 
-    NEBULA_RADIUS: 160,
+    PARTICLE_COUNT: 10000, // 降低总数释放手机性能，保障丝滑高帧率
+    NEBULA_RADIUS: 180,
     COLLAPSE_SPEED: 0.12,
     GRAVITY_STRENGTH: 0.05,
     CAMERA_Z: 600,
-    GLOW_SIZE: 16
+    GLOW_SIZE: 11 // 缩小粒子尺寸，让光晕更细腻，不再是一坨
 };
 
-// 封装应用状态
 const state = {
     currentIndex: 0,
     isPinched: false,
-    lastSwitchTime: 0,
-    isInitialized: false
+    lastSwitchTime: 0
 };
 
-// --- 初始化 3D 渲染器 ---
+// --- 3D 引擎初始化 ---
 const canvas = document.getElementById('output_canvas');
 const uiText = document.getElementById('status_text');
 const scene = new THREE.Scene();
@@ -41,31 +33,27 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: fals
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
-/**
- * 生成预烘焙的发光粒子贴图 (优化性能，避开 BloomPass)
- * @returns {THREE.CanvasTexture}
- */
+// --- 审美重塑：细腻的高动态发光贴图 ---
 function createGlowTexture() {
     const pCanvas = document.createElement('canvas');
     pCanvas.width = 64; pCanvas.height = 64;
     const ctx = pCanvas.getContext('2d');
     const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, 'rgba(255, 255, 255, 1)');   // 炽白核心
-    grad.addColorStop(0.2, 'rgba(255, 215, 0, 0.9)'); // 金色
-    grad.addColorStop(0.5, 'rgba(255, 120, 0, 0.3)'); // 橙色边际
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1)');     // 极亮白炽核心
+    grad.addColorStop(0.1, 'rgba(255, 215, 0, 0.8)');   // 紧凑的内圈纯金
+    grad.addColorStop(0.4, 'rgba(200, 100, 0, 0.15)');  // 极度扩散的暗橙色微弱光晕
     grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(pCanvas);
 }
 
-// --- 内存管理：BufferGeometry 预分配 ---
+// --- 空间分配 ---
 const geometry = new THREE.BufferGeometry();
 const posArray = new Float32Array(CONFIG.PARTICLE_COUNT * 3);
 const baseArray = new Float32Array(CONFIG.PARTICLE_COUNT * 3);
 const targetArray = new Float32Array(CONFIG.PARTICLE_COUNT * 3);
 
-// 构建初始球状星云拓扑
 for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
     const i3 = i * 3;
     const r = CONFIG.NEBULA_RADIUS * Math.cbrt(Math.random());
@@ -76,9 +64,9 @@ for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
     baseArray[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
     baseArray[i3 + 2] = r * Math.cos(phi);
     
-    posArray[i3] = baseArray[i3];
-    posArray[i3 + 1] = baseArray[i3 + 1];
-    posArray[i3 + 2] = baseArray[i3 + 2];
+    posArray[i3] = baseArray[i3] + (Math.random() - 0.5) * 800; // 初始大范围散落
+    posArray[i3 + 1] = baseArray[i3 + 1] + (Math.random() - 0.5) * 800;
+    posArray[i3 + 2] = baseArray[i3 + 2] + (Math.random() - 0.5) * 800;
 }
 
 geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
@@ -88,16 +76,13 @@ const material = new THREE.PointsMaterial({
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     transparent: true,
-    opacity: 0.9
+    opacity: 0.95
 });
 
 const particleSystem = new THREE.Points(geometry, material);
 scene.add(particleSystem);
 
-/**
- * 离屏渲染实现中文坐标采集
- * @param {string} text 
- */
+// --- 文字空间映射 ---
 function updateTargetTopology(text) {
     const tCanvas = document.createElement('canvas');
     const tCtx = tCanvas.getContext('2d');
@@ -122,21 +107,20 @@ function updateTargetTopology(text) {
     for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
         const i3 = i * 3;
         if (i < len) {
+            // 文字部分：增加 Z 轴厚度，立体感更强
             targetArray[i3] = points[i].x + (Math.random() - 0.5) * 4;
             targetArray[i3 + 1] = points[i].y + (Math.random() - 0.5) * 4;
-            targetArray[i3 + 2] = (Math.random() - 0.5) * 10;
+            targetArray[i3 + 2] = (Math.random() - 0.5) * 40; 
         } else {
-            targetArray[i3] = baseArray[i3] * 0.25;
-            targetArray[i3 + 1] = baseArray[i3 + 1] * 0.25;
-            targetArray[i3 + 2] = baseArray[i3 + 2] * 0.25 - 100;
+            // 背景部分：不再揉成团，而是推向远方，形成包裹文字的巨大星际尘埃
+            targetArray[i3] = baseArray[i3] * 3.5;
+            targetArray[i3 + 1] = baseArray[i3 + 1] * 3.5;
+            targetArray[i3 + 2] = baseArray[i3 + 2] * 2.5 - 300; 
         }
     }
     uiText.innerText = `NODE: ${state.currentIndex + 1} / ${TARGET_NODES.length} | LOCK: ${text}`;
 }
 
-/**
- * 切换节点逻辑
- */
 function switchMatrixNode() {
     state.currentIndex = (state.currentIndex + 1) % TARGET_NODES.length;
     updateTargetTopology(TARGET_NODES[state.currentIndex]);
@@ -152,8 +136,10 @@ function animate() {
     for (let i = 0; i < CONFIG.PARTICLE_COUNT; i++) {
         const i3 = i * 3;
         const factor = state.isPinched ? CONFIG.COLLAPSE_SPEED : CONFIG.GRAVITY_STRENGTH;
-        const tx = state.isPinched ? targetArray[i3] : baseArray[i3] + Math.sin(Date.now() * 0.001 + i) * 10;
-        const ty = state.isPinched ? targetArray[i3+1] : baseArray[i3+1] + Math.cos(Date.now() * 0.001 + i) * 10;
+        
+        // 当散开时，加入缓慢游荡的星云动效
+        const tx = state.isPinched ? targetArray[i3] : baseArray[i3] + Math.sin(Date.now() * 0.001 + i) * 15;
+        const ty = state.isPinched ? targetArray[i3+1] : baseArray[i3+1] + Math.cos(Date.now() * 0.001 + i) * 15;
         const tz = state.isPinched ? targetArray[i3+2] : baseArray[i3+2];
         
         pos[i3] += (tx - pos[i3]) * factor;
@@ -164,16 +150,16 @@ function animate() {
     geometry.attributes.position.needsUpdate = true;
     
     if (!state.isPinched) {
-        particleSystem.rotation.y += 0.003;
-        particleSystem.rotation.z += 0.001;
+        particleSystem.rotation.y += 0.004;
+        particleSystem.rotation.z += 0.002;
     } else {
-        particleSystem.rotation.y *= 0.92;
-        particleSystem.rotation.z *= 0.92;
+        particleSystem.rotation.y *= 0.90;
+        particleSystem.rotation.z *= 0.90;
     }
     renderer.render(scene, camera);
 }
 
-// --- 事件监听 (Touch & Mouse Fallbacks) ---
+// --- 备用点击通道 ---
 window.addEventListener('touchstart', () => state.isPinched = true);
 window.addEventListener('touchend', () => state.isPinched = false);
 window.addEventListener('mousedown', () => state.isPinched = true);
@@ -186,29 +172,36 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// --- MediaPipe 手势追踪接入 ---
+// --- MediaPipe 绝对互斥控制 ---
 const videoElement = document.getElementById('input_video');
 const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 
 hands.setOptions({ 
     maxNumHands: 1, 
     modelComplexity: 1, 
-    minDetectionConfidence: 0.6, 
-    minTrackingConfidence: 0.6 
+    minDetectionConfidence: 0.65, 
+    minTrackingConfidence: 0.65 
 });
 
 hands.onResults((results) => {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
         const lm = results.multiHandLandmarks[0];
-        // 判定：拇指与食指捏合
+        
+        // 核心动作1：捏合判定
         const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-        state.isPinched = pinchDist < 0.075;
+        state.isPinched = pinchDist < 0.08;
 
-        // 判定：食指伸直且中指弯曲 -> 触发切换
         const now = Date.now();
-        if (lm[8].y < lm[5].y && lm[12].y > lm[9].y && now - state.lastSwitchTime > 1500) {
-            switchMatrixNode();
-            state.lastSwitchTime = now;
+        
+        // 【绝对互斥锁】：只有在确认没有捏合的前提下，才去检测是不是“比一”
+        if (!state.isPinched) {
+            // 核心动作2：伸出食指 (食指笔直，中指和无名指绝对弯曲)
+            if (lm[8].y < lm[5].y && lm[12].y > lm[9].y && lm[16].y > lm[13].y) {
+                if (now - state.lastSwitchTime > 1500) {
+                    switchMatrixNode();
+                    state.lastSwitchTime = now;
+                }
+            }
         }
     } else {
         state.isPinched = false;
@@ -224,13 +217,10 @@ const mpCamera = new window.Camera(videoElement, {
     width: 640, height: 480
 });
 
-// 系统自检与启动
 updateTargetTopology(TARGET_NODES[0]);
 animate();
 mpCamera.start().then(() => {
-    console.log('Neural Interface Connected.');
     uiText.innerText = `系统就绪 | 手势识别已启动`;
-}).catch(err => {
-    console.error('Sensor Error:', err);
+}).catch(() => {
     uiText.innerText = `传感器受阻 | 已切换至触控模式`;
 });
