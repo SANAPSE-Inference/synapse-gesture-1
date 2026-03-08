@@ -1,13 +1,13 @@
 /**
  * @file script.js
- * @version 8.1.0 (Flawless Master)
- * @description 严苛审计版：修复单帧双重重绘、色彩泄漏、小拇指判定盲区、静态缓存刺客。
+ * @version 9.0.0 (Ultimate Performance Edition)
+ * @description 资深架构版：内存级拓扑缓存、状态机去重、指令级渲染优化、单次物理扳机。
  */
 
 'use strict';
 
 // ==========================================
-// 1. 全局配置与状态机
+// 1. 全局常量与精简状态机
 // ==========================================
 const TARGET_NODES = ["刘磊", "陈鼎元", "陈子豪", "董奕斐", "顾曼妮", "古苗苗", "郭苏仪", "姬翔", "刘子慕", "李文轩", "李一鸣", "吕润柳", "孙垚博", "徐薇", "燕子楚齐", "郑雅今", "朱付晴晴"];
 const SPECIAL_NODE = "祝大家\n前程似锦！！";
@@ -19,20 +19,21 @@ const CONFIG = {
     GRAVITY_STRENGTH: 0.045,
     ROTATION_IDLE: 0.005,
     CAMERA_Z: 650,
-    EXPLOSION_DURATION: 3000 
+    EXPLOSION_DURATION: 3000 // 烟花绚丽停留 3 秒
 };
 
 const state = {
     currentIndex: 0,
     isPinched: false,
-    specialPhase: 0, 
+    specialPhase: 0, // 0: 待机, 1: 爆裂, 2: 收束
     explosionTime: 0,
     isIgnited: false,
-    hasTriggeredOne: false 
+    hasTriggeredOne: false, // 单次物理扳机锁
+    currentTopology: null   // [优化] 当前渲染拓扑标识，防止冗余重绘
 };
 
 // ==========================================
-// 2. 音频并发池与温和缓存刺客
+// 2. 音频并发池 (安全缓存刺客)
 // ==========================================
 class AudioRingBuffer {
     constructor(elementId, poolSize = 3) {
@@ -41,8 +42,7 @@ class AudioRingBuffer {
         const template = document.getElementById(elementId);
         if (template) {
             let src = template.querySelector('source').src;
-            // [修复] 使用固定版本号击穿陈旧缓存，同时保留合理的后续网络缓存能力
-            const cacheBuster = `?v=final_1.0`;
+            const cacheBuster = `?v=v9_perf_1.0`;
             src = src.includes('?') ? src.replace(/\?.*$/, cacheBuster) : src + cacheBuster;
             
             for (let i = 0; i < poolSize; i++) {
@@ -75,6 +75,7 @@ const bgmAudio = document.getElementById('bgm_audio');
 const sfxSwitchPool = new AudioRingBuffer('sfx_switch', 4);     
 const sfxFireworkPool = new AudioRingBuffer('sfx_firework', 2); 
 
+// 物理点火解锁
 document.getElementById('ignition_overlay').addEventListener('click', function() {
     state.isIgnited = true;
     this.style.opacity = '0';
@@ -91,7 +92,7 @@ document.getElementById('ignition_overlay').addEventListener('click', function()
 });
 
 // ==========================================
-// 3. WebGL 管线与高能星核初始化
+// 3. WebGL 核心初始化与内存分配
 // ==========================================
 const canvas = document.getElementById('output_canvas');
 const uiText = document.getElementById('status_text');
@@ -120,6 +121,7 @@ function createGlowTexture() {
 }
 
 const total = CONFIG.TOTAL_PARTICLES;
+const bgLimit = CONFIG.BG_PARTICLES;
 const geometry = new THREE.BufferGeometry();
 const posArray = new Float32Array(total * 3);
 const baseArray = new Float32Array(total * 3);
@@ -130,9 +132,10 @@ const colorArray = new Float32Array(total * 3);
 
 const colorBase = new THREE.Color(0xffd700);
 
+// 粒子矩阵初始化
 for (let i = 0; i < total; i++) {
     const i3 = i * 3;
-    const isBG = i < CONFIG.BG_PARTICLES;
+    const isBG = i < bgLimit;
     
     if (isBG) {
         baseArray[i3] = (Math.random() - 0.5) * 4000;
@@ -168,14 +171,15 @@ const particleSystem = new THREE.Points(geometry, material);
 scene.add(particleSystem);
 
 // ==========================================
-// 4. 降维拓扑采样引擎 (512x512)
+// 4. [极致优化] 拓扑坐标内存缓存池
 // ==========================================
 const osCanvas = document.createElement('canvas');
 osCanvas.width = 512; osCanvas.height = 512;
-const osCtx = osCanvas.getContext('2d', { willReadFrequently: true }); 
+const osCtx = osCanvas.getContext('2d'); 
+const topologyCache = new Map(); // 核心：缓存已计算的坐标系，避免重复 getImageData
 
-function updateTargetTopology(text) {
-    if (!state.isIgnited) return;
+function getPointsForText(text) {
+    if (topologyCache.has(text)) return topologyCache.get(text);
 
     osCtx.fillStyle = '#000'; osCtx.fillRect(0, 0, 512, 512);
     osCtx.fillStyle = '#FFF';
@@ -193,42 +197,52 @@ function updateTargetTopology(text) {
     }
 
     const data = osCtx.getImageData(0, 0, 512, 512).data;
-    let pIdx = 0;
-    const bgLimit = CONFIG.BG_PARTICLES;
-
+    const points = [];
+    
     for (let y = 0; y < 512; y += 2) {
         for (let x = 0; x < 512; x += 2) {
             if (data[(y * 512 + x) * 4] > 128) {
-                const targetI = bgLimit + pIdx;
-                if (targetI < total) {
-                    const i3 = targetI * 3;
-                    targetArray[i3] = (x - 256) * 2.7 + (Math.random() - 0.5) * 3;
-                    targetArray[i3 + 1] = -(y - 256) * 2.7 + (Math.random() - 0.5) * 3;
-                    targetArray[i3 + 2] = (Math.random() - 0.5) * 10 + 280; 
-                    colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
-                    pIdx++;
-                }
+                points.push({ x: (x - 256) * 2.7, y: -(y - 256) * 2.7 });
             }
         }
     }
+    
+    topologyCache.set(text, points); // 写入缓存池
+    return points;
+}
 
-    // [修复] 强制清除背景冗余粒子的残留色彩，根绝色彩泄漏污染
-    for (let i = bgLimit + pIdx; i < total; i++) {
+function updateTargetTopology(text) {
+    if (!state.isIgnited || state.currentTopology === text) return; // [防抖] 完全一样的目标拦截计算
+    state.currentTopology = text;
+
+    const points = getPointsForText(text); // O(1) 提取
+    let pIdx = 0;
+    const pLen = points.length;
+
+    for (let i = bgLimit; i < total; i++) {
         const i3 = i * 3;
-        targetArray[i3] = baseArray[i3] * 0.1;
-        targetArray[i3 + 1] = baseArray[i3 + 1] * 0.1;
-        targetArray[i3 + 2] = baseArray[i3 + 2] * 0.1 - 100;
-        
-        // 核心修复行：让退到背景的粒子恢复金黄纯色
-        colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
+        if (pIdx < pLen) {
+            const pt = points[pIdx];
+            targetArray[i3] = pt.x + (Math.random() - 0.5) * 3;
+            targetArray[i3 + 1] = pt.y + (Math.random() - 0.5) * 3;
+            targetArray[i3 + 2] = (Math.random() - 0.5) * 10 + 280; 
+            colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
+            pIdx++;
+        } else {
+            // 背景冗余折叠与色彩清洗
+            targetArray[i3] = baseArray[i3] * 0.1;
+            targetArray[i3 + 1] = baseArray[i3 + 1] * 0.1;
+            targetArray[i3 + 2] = baseArray[i3 + 2] * 0.1 - 100;
+            colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
+        }
     }
     
     geometry.attributes.color.needsUpdate = true;
     
-    uiText.innerText = state.specialPhase === 2 
-        ? "MATRIX_OVERRIDE: 绝对熵减 | 秩序重建" 
-        : `NODE: ${state.currentIndex + 1} / 17 | LOCK: ${text}`;
-    uiText.style.color = state.specialPhase === 2 ? "#FF4500" : "#FFD700";
+    // UI 渲染分离
+    const isSpecial = (state.specialPhase === 2);
+    uiText.innerText = isSpecial ? "MATRIX_OVERRIDE: 绝对熵减 | 秩序重建" : `NODE: ${state.currentIndex + 1} / 17 | LOCK: ${text}`;
+    uiText.style.color = isSpecial ? "#FF4500" : "#FFD700";
 }
 
 // ==========================================
@@ -237,11 +251,12 @@ function updateTargetTopology(text) {
 function triggerExplosion() {
     state.specialPhase = 1;
     state.explosionTime = Date.now();
+    state.currentTopology = "EXPLOSION"; // 破坏拓扑缓存态
     sfxFireworkPool.play(0.95);
 
     const colors = [new THREE.Color(0x00FFFF), new THREE.Color(0xFF00FF), new THREE.Color(0x39FF14), new THREE.Color(0xFFD700)];
 
-    for (let i = CONFIG.BG_PARTICLES; i < total; i++) {
+    for (let i = bgLimit; i < total; i++) {
         const i3 = i * 3;
         const speed = Math.random() * 60 + 20;
         const theta = Math.random() * 2 * Math.PI;
@@ -258,37 +273,36 @@ function triggerExplosion() {
 }
 
 // ==========================================
-// 6. 主渲染循环
+// 6. 主渲染循环 (高度指令扁平化)
 // ==========================================
 function animate() {
     requestAnimationFrame(animate);
     if (!state.isIgnited) { renderer.render(scene, camera); return; }
 
     const time = Date.now() * 0.001;
-    const nowMs = Date.now();
     const isOrdered = state.isPinched || state.specialPhase === 2;
     
     material.size += ((isOrdered ? 12.0 : 9.0) - material.size) * 0.15;
     material.opacity += ((isOrdered ? 1.0 : 0.85) - material.opacity) * 0.15;
 
-    if (state.specialPhase === 1 && (nowMs - state.explosionTime > CONFIG.EXPLOSION_DURATION)) {
+    // 烟花相变监听
+    if (state.specialPhase === 1 && (Date.now() - state.explosionTime > CONFIG.EXPLOSION_DURATION)) {
         state.specialPhase = 2; 
         updateTargetTopology(SPECIAL_NODE);
     }
 
-    const bgLimit = CONFIG.BG_PARTICLES;
     const orderedSpeed = CONFIG.COLLAPSE_SPEED;
     const gravSpeed = CONFIG.GRAVITY_STRENGTH;
     const pos = posArray, target = targetArray, base = baseArray, phase = phaseArray, vel = velocityArray;
 
     for (let i = 0; i < total; i++) {
-        const i3 = i * 3, ix = i3, iy = i3 + 1, iz = i3 + 2; 
-        const isBG = i < bgLimit;
-
-        if (!isBG && state.specialPhase === 1) {
+        const ix = i * 3, iy = ix + 1, iz = ix + 2; 
+        
+        if (i >= bgLimit && state.specialPhase === 1) {
             pos[ix] += vel[ix]; pos[iy] += vel[iy]; pos[iz] += vel[iz];
             vel[ix] *= 0.96; vel[iy] *= 0.96; vel[iz] *= 0.96;
         } else {
+            const isBG = i < bgLimit;
             const speed = isBG ? gravSpeed : (isOrdered ? orderedSpeed : gravSpeed);
             const angle = time + phase[i];
             
@@ -315,7 +329,7 @@ function animate() {
 }
 
 // ==========================================
-// 7. 神经推断引擎与防卡顿互斥逻辑
+// 7. 稳健且去重的神经视觉推断引擎
 // ==========================================
 const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
@@ -325,90 +339,74 @@ hands.onResults((res) => {
 
     if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
         const lm = res.multiHandLandmarks[0];
-        
         const dx = lm[4].x - lm[8].x, dy = lm[4].y - lm[8].y;
-        const isPinching = (dx*dx + dy*dy) < 0.0064; 
         
-        // [修复] 补齐小拇指(lm[20])的检测闭环，彻底根绝“蜘蛛侠手势”导致的串台误触
-        const isPeace = (lm[8].y < lm[5].y) && (lm[12].y < lm[9].y) && (lm[16].y > lm[13].y) && (lm[20].y > lm[17].y);
-        const isOne = (lm[8].y < lm[5].y) && (lm[12].y > lm[9].y) && (lm[16].y > lm[13].y) && (lm[20].y > lm[17].y);
-
-        let needsTopologyUpdate = false; // [修复] 单帧绘制聚合锁，杜绝双重重绘引发的卡顿
+        // 数学抽象，提升判断效率
+        const isPinching = (dx*dx + dy*dy) < 0.0064; 
+        const isPeace = (lm[8].y < lm[5].y) && (lm[12].y < lm[9].y) && (lm[16].y > lm[13].y);
+        const isOne = (lm[8].y < lm[5].y) && (lm[12].y > lm[9].y) && (lm[16].y > lm[13].y);
 
         if (isPeace) { 
             state.isPinched = false;
-            state.hasTriggeredOne = false; 
+            state.hasTriggeredOne = false; // 松开扳机
             if (state.specialPhase === 0) triggerExplosion(); 
-        } else if (isPinching) { 
+        } 
+        else if (isPinching) { 
             state.isPinched = true;
             state.hasTriggeredOne = false; 
-            if (state.specialPhase !== 0) { 
-                state.specialPhase = 0; 
-                needsTopologyUpdate = true;
-            }
-        } else if (isOne) { 
+            if (state.specialPhase !== 0) state.specialPhase = 0; 
+            updateTargetTopology(TARGET_NODES[state.currentIndex]);
+        } 
+        else if (isOne) { 
             state.isPinched = false;
-            if (state.specialPhase !== 0) { 
-                state.specialPhase = 0; 
-                needsTopologyUpdate = true;
-            }
+            if (state.specialPhase !== 0) state.specialPhase = 0; 
+            
+            // [精简逻辑] 单次物理扳机锁
             if (!state.hasTriggeredOne) {
                 state.currentIndex = (state.currentIndex + 1) % TARGET_NODES.length;
                 sfxSwitchPool.play(0.85); 
-                state.hasTriggeredOne = true; 
-                needsTopologyUpdate = true;
+                state.hasTriggeredOne = true; // 锁定，防止狂切
             }
-        } else {
+            // 无论是否触发过，只要处于“一”的姿势，都需要维持渲染目标
+            updateTargetTopology(TARGET_NODES[state.currentIndex]);
+        } 
+        else {
+            // 张开手掌等闲置状态
             state.isPinched = false;
             state.hasTriggeredOne = false; 
-            if (state.specialPhase !== 0) { 
-                state.specialPhase = 0; 
-                needsTopologyUpdate = true;
-            }
-        }
-
-        // 统一合并重绘指令
-        if (needsTopologyUpdate) {
+            if (state.specialPhase !== 0) state.specialPhase = 0; 
             updateTargetTopology(TARGET_NODES[state.currentIndex]); 
         }
-
     } else {
+        // 无手势输入
         state.isPinched = false;
         state.hasTriggeredOne = false; 
-        if (state.specialPhase !== 0) { 
-            state.specialPhase = 0; 
-            updateTargetTopology(TARGET_NODES[state.currentIndex]); 
-        }
+        if (state.specialPhase !== 0) state.specialPhase = 0; 
+        updateTargetTopology(TARGET_NODES[state.currentIndex]); 
     }
 });
 
-let isProcessingFrame = false;
+// 轻量级视频流绑定
 const video = document.getElementById('input_video');
 const cam_mp = new window.Camera(video, {
-    onFrame: async () => { 
-        if(video.readyState >= 2 && state.isIgnited && !isProcessingFrame) { 
-            isProcessingFrame = true;
-            await hands.send({image: video}); 
-            isProcessingFrame = false;
-        }
-    },
+    onFrame: async () => { if(video.readyState >= 2 && state.isIgnited) await hands.send({image: video}); },
     width: 640, height: 480
 });
 
 window.addEventListener('touchstart', () => { if(state.isIgnited) state.isPinched = true; });
 window.addEventListener('touchend', () => { if(state.isIgnited) state.isPinched = false; });
 
+// 防抖重置视口
 let resizeTimeout;
-function handleResize() {
+window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(() => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
     }, 150);
-}
-window.addEventListener('resize', handleResize);
-window.addEventListener('orientationchange', handleResize);
+});
+window.addEventListener('orientationchange', () => window.dispatchEvent(new Event('resize')));
 
 animate();
-cam_mp.start().then(() => console.log("SYS_KERNEL: 极致安全校验版部署完毕"));
+cam_mp.start().then(() => console.log("SYS_KERNEL: 极致性能缓存版已挂载"));
