@@ -1,7 +1,7 @@
 /**
  * @file script.js
- * @version 9.0.0 (Ultimate Performance Edition)
- * @description 资深架构版：内存级拓扑缓存、状态机去重、指令级渲染优化、单次物理扳机。
+ * @version 9.1.0 (Stable Master)
+ * @description 满血复活版：移除崩溃指令、修复烟花打断、比“一”手势引力重构。
  */
 
 'use strict';
@@ -25,11 +25,12 @@ const CONFIG = {
 const state = {
     currentIndex: 0,
     isPinched: false,
+    isOneGesture: false, // [修复] 专门记录是否处于“一”的展示状态
     specialPhase: 0, // 0: 待机, 1: 爆裂, 2: 收束
     explosionTime: 0,
     isIgnited: false,
-    hasTriggeredOne: false, // 单次物理扳机锁
-    currentTopology: null   // [优化] 当前渲染拓扑标识，防止冗余重绘
+    hasTriggeredOne: false, 
+    currentTopology: null   
 };
 
 // ==========================================
@@ -41,8 +42,10 @@ class AudioRingBuffer {
         this.index = 0;
         const template = document.getElementById(elementId);
         if (template) {
-            let src = template.querySelector('source').src;
-            const cacheBuster = `?v=v9_perf_1.0`;
+            const sourceElement = template.querySelector('source');
+            if (!sourceElement) return;
+            let src = sourceElement.src;
+            const cacheBuster = `?v=stable_final`;
             src = src.includes('?') ? src.replace(/\?.*$/, cacheBuster) : src + cacheBuster;
             
             for (let i = 0; i < poolSize; i++) {
@@ -171,12 +174,13 @@ const particleSystem = new THREE.Points(geometry, material);
 scene.add(particleSystem);
 
 // ==========================================
-// 4. [极致优化] 拓扑坐标内存缓存池
+// 4. [稳健版] 拓扑坐标内存缓存池
 // ==========================================
 const osCanvas = document.createElement('canvas');
 osCanvas.width = 512; osCanvas.height = 512;
+// [彻底拆除] 删除了导致部分设备抛出 Fatal Error 的 willReadFrequently 指令
 const osCtx = osCanvas.getContext('2d'); 
-const topologyCache = new Map(); // 核心：缓存已计算的坐标系，避免重复 getImageData
+const topologyCache = new Map(); 
 
 function getPointsForText(text) {
     if (topologyCache.has(text)) return topologyCache.get(text);
@@ -207,15 +211,15 @@ function getPointsForText(text) {
         }
     }
     
-    topologyCache.set(text, points); // 写入缓存池
+    topologyCache.set(text, points); 
     return points;
 }
 
 function updateTargetTopology(text) {
-    if (!state.isIgnited || state.currentTopology === text) return; // [防抖] 完全一样的目标拦截计算
+    if (!state.isIgnited || state.currentTopology === text) return; 
     state.currentTopology = text;
 
-    const points = getPointsForText(text); // O(1) 提取
+    const points = getPointsForText(text); 
     let pIdx = 0;
     const pLen = points.length;
 
@@ -229,7 +233,6 @@ function updateTargetTopology(text) {
             colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
             pIdx++;
         } else {
-            // 背景冗余折叠与色彩清洗
             targetArray[i3] = baseArray[i3] * 0.1;
             targetArray[i3 + 1] = baseArray[i3 + 1] * 0.1;
             targetArray[i3 + 2] = baseArray[i3 + 2] * 0.1 - 100;
@@ -239,7 +242,6 @@ function updateTargetTopology(text) {
     
     geometry.attributes.color.needsUpdate = true;
     
-    // UI 渲染分离
     const isSpecial = (state.specialPhase === 2);
     uiText.innerText = isSpecial ? "MATRIX_OVERRIDE: 绝对熵减 | 秩序重建" : `NODE: ${state.currentIndex + 1} / 17 | LOCK: ${text}`;
     uiText.style.color = isSpecial ? "#FF4500" : "#FFD700";
@@ -251,7 +253,7 @@ function updateTargetTopology(text) {
 function triggerExplosion() {
     state.specialPhase = 1;
     state.explosionTime = Date.now();
-    state.currentTopology = "EXPLOSION"; // 破坏拓扑缓存态
+    state.currentTopology = "EXPLOSION"; 
     sfxFireworkPool.play(0.95);
 
     const colors = [new THREE.Color(0x00FFFF), new THREE.Color(0xFF00FF), new THREE.Color(0x39FF14), new THREE.Color(0xFFD700)];
@@ -273,19 +275,21 @@ function triggerExplosion() {
 }
 
 // ==========================================
-// 6. 主渲染循环 (高度指令扁平化)
+// 6. 主渲染循环 (平滑处理防崩溃)
 // ==========================================
 function animate() {
     requestAnimationFrame(animate);
     if (!state.isIgnited) { renderer.render(scene, camera); return; }
 
     const time = Date.now() * 0.001;
-    const isOrdered = state.isPinched || state.specialPhase === 2;
+    
+    // [修复] 赋予“一”手势引力控制权。现在比出“一”，粒子立刻完美成型，让你从容展示
+    const isOrdered = state.isPinched || state.isOneGesture || state.specialPhase === 2;
     
     material.size += ((isOrdered ? 12.0 : 9.0) - material.size) * 0.15;
     material.opacity += ((isOrdered ? 1.0 : 0.85) - material.opacity) * 0.15;
 
-    // 烟花相变监听
+    // 烟花自然相变
     if (state.specialPhase === 1 && (Date.now() - state.explosionTime > CONFIG.EXPLOSION_DURATION)) {
         state.specialPhase = 2; 
         updateTargetTopology(SPECIAL_NODE);
@@ -329,7 +333,7 @@ function animate() {
 }
 
 // ==========================================
-// 7. 稳健且去重的神经视觉推断引擎
+// 7. 神经视觉推断引擎 (修复判定打断Bug)
 // ==========================================
 const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
@@ -341,52 +345,53 @@ hands.onResults((res) => {
         const lm = res.multiHandLandmarks[0];
         const dx = lm[4].x - lm[8].x, dy = lm[4].y - lm[8].y;
         
-        // 数学抽象，提升判断效率
         const isPinching = (dx*dx + dy*dy) < 0.0064; 
         const isPeace = (lm[8].y < lm[5].y) && (lm[12].y < lm[9].y) && (lm[16].y > lm[13].y);
         const isOne = (lm[8].y < lm[5].y) && (lm[12].y > lm[9].y) && (lm[16].y > lm[13].y);
 
         if (isPeace) { 
-            state.isPinched = false;
-            state.hasTriggeredOne = false; // 松开扳机
+            state.isPinched = false; state.isOneGesture = false;
+            state.hasTriggeredOne = false; 
             if (state.specialPhase === 0) triggerExplosion(); 
         } 
         else if (isPinching) { 
-            state.isPinched = true;
+            state.isPinched = true; state.isOneGesture = false;
             state.hasTriggeredOne = false; 
-            if (state.specialPhase !== 0) state.specialPhase = 0; 
-            updateTargetTopology(TARGET_NODES[state.currentIndex]);
+            if (state.specialPhase !== 0) {
+                state.specialPhase = 0; 
+                updateTargetTopology(TARGET_NODES[state.currentIndex]);
+            }
         } 
         else if (isOne) { 
-            state.isPinched = false;
+            state.isPinched = false; state.isOneGesture = true; // 开启展示态
             if (state.specialPhase !== 0) state.specialPhase = 0; 
             
-            // [精简逻辑] 单次物理扳机锁
             if (!state.hasTriggeredOne) {
                 state.currentIndex = (state.currentIndex + 1) % TARGET_NODES.length;
                 sfxSwitchPool.play(0.85); 
-                state.hasTriggeredOne = true; // 锁定，防止狂切
+                state.hasTriggeredOne = true; 
             }
-            // 无论是否触发过，只要处于“一”的姿势，都需要维持渲染目标
             updateTargetTopology(TARGET_NODES[state.currentIndex]);
         } 
         else {
-            // 张开手掌等闲置状态
-            state.isPinched = false;
+            // 张开手掌或其它杂乱手势
+            state.isPinched = false; state.isOneGesture = false;
             state.hasTriggeredOne = false; 
-            if (state.specialPhase !== 0) state.specialPhase = 0; 
-            updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+            // [极其关键的修复]：绝对不再随意中断烟花 (specialPhase = 0)，保证 3 秒完整播放
+            if (state.specialPhase === 0) {
+                updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+            }
         }
     } else {
         // 无手势输入
-        state.isPinched = false;
+        state.isPinched = false; state.isOneGesture = false;
         state.hasTriggeredOne = false; 
-        if (state.specialPhase !== 0) state.specialPhase = 0; 
-        updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+        if (state.specialPhase === 0) {
+            updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+        }
     }
 });
 
-// 轻量级视频流绑定
 const video = document.getElementById('input_video');
 const cam_mp = new window.Camera(video, {
     onFrame: async () => { if(video.readyState >= 2 && state.isIgnited) await hands.send({image: video}); },
@@ -396,7 +401,6 @@ const cam_mp = new window.Camera(video, {
 window.addEventListener('touchstart', () => { if(state.isIgnited) state.isPinched = true; });
 window.addEventListener('touchend', () => { if(state.isIgnited) state.isPinched = false; });
 
-// 防抖重置视口
 let resizeTimeout;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
@@ -409,4 +413,4 @@ window.addEventListener('resize', () => {
 window.addEventListener('orientationchange', () => window.dispatchEvent(new Event('resize')));
 
 animate();
-cam_mp.start().then(() => console.log("SYS_KERNEL: 极致性能缓存版已挂载"));
+cam_mp.start().then(() => console.log("SYS_KERNEL: 修复版引擎已成功挂载，死锁解除"));
