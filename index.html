@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synapse Gesture Matrix</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+</head>
+<body>
+    <video id="input_video" style="display: none;"></video>
+    
+    <canvas id="output_canvas"></canvas>
+    
+    <div id="ui_layer">
+        <h1 id="name_display">STARLIGHT</h1>
+        <p id="status_text">系统初始化中 | 当前矩阵节点: 1</p>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
