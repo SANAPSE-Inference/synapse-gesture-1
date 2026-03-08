@@ -3,18 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Synapse Particle Matrix V3</title>
+    <title>Synapse Gesture Matrix V4</title>
+    
     <link rel="stylesheet" href="style.css">
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
 <body>
     <video id="input_video" playsinline webkit-playsinline autoplay muted style="display: none;"></video>
+    
     <canvas id="output_canvas"></canvas>
     
     <div id="ui_layer">
-        <p id="status_text">系统就绪 | 等待神经连接</p>
+        <p id="status_text">系统初始化 | 神经连接待命</p>
     </div>
 
     <script src="script.js"></script>

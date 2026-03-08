@@ -1,7 +1,7 @@
-/* CSS reset and hardware acceleration hints */
+/* 归一化环境变量，切断各浏览器默认渲染差异 */
 *, *::before, *::after {
     box-sizing: border-box;
-    -webkit-tap-highlight-color: transparent;
+    -webkit-tap-highlight-color: transparent; /* 阻断移动端点击闪烁干扰 */
 }
 
 body, html {
@@ -9,10 +9,11 @@ body, html {
     padding: 0;
     width: 100vw;
     height: 100vh;
-    overflow: hidden;
-    background-color: #000000;
+    overflow: hidden; /* 绝对禁止滚动条计算 */
+    background-color: #000000; /* 物理纯黑，为加色混合材质提供最高对比度底噪 */
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif;
-    user-select: none;
+    user-select: none; /* 阻断用户长按选中文本的无效行为 */
+    -webkit-user-select: none;
 }
 
 #output_canvas {
@@ -22,23 +23,23 @@ body, html {
     position: absolute;
     top: 0;
     left: 0;
-    z-index: 1;
+    z-index: 1; /* 置于渲染底层 */
 }
 
+/* 监视器文本层：无物理碰撞体积 */
 #ui_layer {
     position: absolute;
-    bottom: 40px;
+    bottom: 5vh;
     width: 100%;
     z-index: 10;
     text-align: center;
-    pointer-events: none;
+    pointer-events: none; /* 绝对指令：鼠标与触摸事件直接穿透 UI，防止拦截 3D 画布手势 */
 }
 
 #status_text {
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.6);
-    letter-spacing: 0.2em;
-    text-shadow: 0 0 10px rgba(255, 200, 0, 0.5);
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.45);
+    letter-spacing: 0.25em;
     margin: 0;
-    transition: color 0.3s ease;
+    transition: color 0.15s ease-out; /* 为状态切换提供微秒级视觉反馈阻尼 */
 }
