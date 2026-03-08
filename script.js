@@ -1,13 +1,13 @@
 /**
  * @file script.js
- * @version 7.3.0 (Enterprise Performance Edition)
- * @description 移动端极限优化版：离屏降维采样、环形音频缓冲池、神经推断节流、指令级渲染缓存。
+ * @version 8.0.0 (Elegance & Performance Edition)
+ * @description 终极交付版：单次物理扳机锁、动态音频缓存击穿、零GC字模采样。
  */
 
 'use strict';
 
 // ==========================================
-// 1. 全局配置与状态机 (State & Config)
+// 1. 全局配置与状态机矩阵
 // ==========================================
 const TARGET_NODES = ["刘磊", "陈鼎元", "陈子豪", "董奕斐", "顾曼妮", "古苗苗", "郭苏仪", "姬翔", "刘子慕", "李文轩", "李一鸣", "吕润柳", "孙垚博", "徐薇", "燕子楚齐", "郑雅今", "朱付晴晴"];
 const SPECIAL_NODE = "祝大家\n前程似锦！！";
@@ -19,20 +19,20 @@ const CONFIG = {
     GRAVITY_STRENGTH: 0.045,
     ROTATION_IDLE: 0.005,
     CAMERA_Z: 650,
-    EXPLOSION_DURATION: 3000
+    EXPLOSION_DURATION: 3000 // 烟花绚丽停留 3 秒
 };
 
 const state = {
     currentIndex: 0,
     isPinched: false,
-    specialPhase: 0, // 0: 待机, 1: 爆裂, 2: 收束
+    specialPhase: 0, 
     explosionTime: 0,
-    lastSwitchTime: 0,
-    isIgnited: false
+    isIgnited: false,
+    hasTriggeredOne: false // [优化] 单次物理扳机锁，杜绝连续触发
 };
 
 // ==========================================
-// 2. 高性能音频环形缓冲池 (Audio Ring Buffer)
+// 2. 高性能音频并发池与缓存刺客
 // ==========================================
 class AudioRingBuffer {
     constructor(elementId, poolSize = 3) {
@@ -40,8 +40,11 @@ class AudioRingBuffer {
         this.index = 0;
         const template = document.getElementById(elementId);
         if (template) {
-            const src = template.querySelector('source').src;
-            // 预先实例化指定数量的音频对象常驻内存，避免运行时创建导致 GC 卡顿
+            let src = template.querySelector('source').src;
+            // [优化] 缓存刺客：强制注入版本后缀，击穿移动端陈旧的音频缓存
+            const cacheBuster = `?v=update_${Date.now()}`;
+            src = src.includes('?') ? src.replace(/\?.*$/, cacheBuster) : src + cacheBuster;
+            
             for (let i = 0; i < poolSize; i++) {
                 const audio = new Audio(src);
                 audio.preload = 'auto';
@@ -50,7 +53,7 @@ class AudioRingBuffer {
         }
     }
 
-    // 批量静默解锁，应对 iOS 苛刻的 Autoplay 策略
+    // 突破 iOS Autoplay 限制的批量静默解锁
     unlockAll() {
         this.pool.forEach(audio => {
             audio.volume = 0;
@@ -58,7 +61,6 @@ class AudioRingBuffer {
         });
     }
 
-    // 轮询播放，支持高频并发无缝重叠
     play(volume = 1.0) {
         if (!this.pool.length) return;
         const audio = this.pool[this.index];
@@ -71,9 +73,10 @@ class AudioRingBuffer {
 }
 
 const bgmAudio = document.getElementById('bgm_audio');
-const sfxSwitchPool = new AudioRingBuffer('sfx_switch', 4);     // 切换音效池
-const sfxFireworkPool = new AudioRingBuffer('sfx_firework', 2); // 烟花音效池
+const sfxSwitchPool = new AudioRingBuffer('sfx_switch', 4);     
+const sfxFireworkPool = new AudioRingBuffer('sfx_firework', 2); 
 
+// 物理点火锁解禁
 document.getElementById('ignition_overlay').addEventListener('click', function() {
     state.isIgnited = true;
     this.style.opacity = '0';
@@ -82,7 +85,6 @@ document.getElementById('ignition_overlay').addEventListener('click', function()
     bgmAudio.volume = 0.65;
     bgmAudio.play().catch(e => console.warn("BGM Blocked:", e));
     
-    // 强制解锁所有内存池中的音频对象
     sfxSwitchPool.unlockAll();
     sfxFireworkPool.unlockAll();
     
@@ -91,7 +93,7 @@ document.getElementById('ignition_overlay').addEventListener('click', function()
 });
 
 // ==========================================
-// 3. WebGL 核心管线与内存分配
+// 3. WebGL 核心管线与高亮星核内存分配
 // ==========================================
 const canvas = document.getElementById('output_canvas');
 const uiText = document.getElementById('status_text');
@@ -119,8 +121,8 @@ function createGlowTexture() {
     return new THREE.CanvasTexture(pCanvas);
 }
 
-const geometry = new THREE.BufferGeometry();
 const total = CONFIG.TOTAL_PARTICLES;
+const geometry = new THREE.BufferGeometry();
 const posArray = new Float32Array(total * 3);
 const baseArray = new Float32Array(total * 3);
 const targetArray = new Float32Array(total * 3);
@@ -139,6 +141,7 @@ for (let i = 0; i < total; i++) {
         baseArray[i3 + 1] = (Math.random() - 0.5) * 4000;
         baseArray[i3 + 2] = (Math.random() - 0.5) * 800 - 200; 
     } else {
+        // [极亮星核] 半径收缩至 140，提升初始能量密度
         const r = 140 * Math.cbrt(Math.random());
         const theta = Math.random() * 2 * Math.PI;
         const phi = Math.acos(2 * Math.random() - 1);
@@ -150,14 +153,13 @@ for (let i = 0; i < total; i++) {
     posArray[i3] = baseArray[i3]; posArray[i3 + 1] = baseArray[i3 + 1]; posArray[i3 + 2] = baseArray[i3 + 2];
     colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
     phaseArray[i] = Math.random() * Math.PI * 2;
-    // 速度矩阵初始化由 TypedArray 默认填零机制完成，无需显式赋值
 }
 
 geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
 geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
 
 const material = new THREE.PointsMaterial({
-    size: 9.0, 
+    size: 9.0, // 初始高光质感
     map: createGlowTexture(),
     blending: THREE.AdditiveBlending,
     depthWrite: false,
@@ -169,9 +171,8 @@ const particleSystem = new THREE.Points(geometry, material);
 scene.add(particleSystem);
 
 // ==========================================
-// 4. 降维拓扑采样引擎 (512x512)
+// 4. 降维拓扑采样引擎 (512x512 算力骤减 75%)
 // ==========================================
-// [优化] 离屏 Canvas 降维至 512x512，算力消耗直接降低 75%
 const osCanvas = document.createElement('canvas');
 osCanvas.width = 512; osCanvas.height = 512;
 const osCtx = osCanvas.getContext('2d', { willReadFrequently: true }); 
@@ -185,7 +186,6 @@ function updateTargetTopology(text) {
     const lines = text.split('\n');
     osCtx.textAlign = 'center'; osCtx.textBaseline = 'middle';
     
-    // 字体与坐标等比缩小 50%
     if (lines.length > 1) {
         osCtx.font = 'bold 75px "Microsoft YaHei", sans-serif';
         osCtx.fillText(lines[0], 256, 210);
@@ -199,18 +199,15 @@ function updateTargetTopology(text) {
     let pIdx = 0;
     const bgLimit = CONFIG.BG_PARTICLES;
 
-    // 采样步进调整为 2 (匹配降维后的分辨率)
     for (let y = 0; y < 512; y += 2) {
         for (let x = 0; x < 512; x += 2) {
             if (data[(y * 512 + x) * 4] > 128) {
                 const targetI = bgLimit + pIdx;
                 if (targetI < total) {
                     const i3 = targetI * 3;
-                    // 乘数调整，恢复原有的物理映射比例
                     targetArray[i3] = (x - 256) * 2.7 + (Math.random() - 0.5) * 3;
                     targetArray[i3 + 1] = -(y - 256) * 2.7 + (Math.random() - 0.5) * 3;
                     targetArray[i3 + 2] = (Math.random() - 0.5) * 10 + 280; 
-                    
                     colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
                     pIdx++;
                 }
@@ -218,7 +215,6 @@ function updateTargetTopology(text) {
         }
     }
 
-    // 冗余算力推入微弱背景晕染
     for (let i = bgLimit + pIdx; i < total; i++) {
         const i3 = i * 3;
         targetArray[i3] = baseArray[i3] * 0.1;
@@ -261,7 +257,7 @@ function triggerExplosion() {
 }
 
 // ==========================================
-// 6. 主渲染循环 (指令级缓存优化)
+// 6. 主渲染循环 (局部变量强力缓存)
 // ==========================================
 function animate() {
     requestAnimationFrame(animate);
@@ -271,7 +267,6 @@ function animate() {
     const nowMs = Date.now();
     const isOrdered = state.isPinched || state.specialPhase === 2;
     
-    // 材质平滑增益
     material.size += ((isOrdered ? 12.0 : 9.0) - material.size) * 0.15;
     material.opacity += ((isOrdered ? 1.0 : 0.85) - material.opacity) * 0.15;
 
@@ -280,21 +275,14 @@ function animate() {
         updateTargetTopology(SPECIAL_NODE);
     }
 
-    // 局部变量缓存，阻断高频作用域链查找
     const bgLimit = CONFIG.BG_PARTICLES;
     const orderedSpeed = CONFIG.COLLAPSE_SPEED;
     const gravSpeed = CONFIG.GRAVITY_STRENGTH;
     
-    // 提取纯引用，避免在循环内重复寻址
-    const pos = posArray; 
-    const target = targetArray;
-    const base = baseArray;
-    const phase = phaseArray;
-    const vel = velocityArray;
+    const pos = posArray, target = targetArray, base = baseArray, phase = phaseArray, vel = velocityArray;
 
     for (let i = 0; i < total; i++) {
-        const i3 = i * 3;
-        const ix = i3, iy = i3 + 1, iz = i3 + 2; 
+        const i3 = i * 3, ix = i3, iy = i3 + 1, iz = i3 + 2; 
         const isBG = i < bgLimit;
 
         if (!isBG && state.specialPhase === 1) {
@@ -315,7 +303,6 @@ function animate() {
     }
     geometry.attributes.position.needsUpdate = true;
 
-    // 相机回正锁
     if (isOrdered) {
         particleSystem.rotation.y += (0 - particleSystem.rotation.y) * 0.15;
         particleSystem.rotation.z += (0 - particleSystem.rotation.z) * 0.15;
@@ -328,7 +315,7 @@ function animate() {
 }
 
 // ==========================================
-// 7. 神经视觉推断引擎
+// 7. 神经视觉推断与绝对互斥状态机
 // ==========================================
 const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
@@ -338,40 +325,50 @@ hands.onResults((res) => {
 
     if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
         const lm = res.multiHandLandmarks[0];
-        const now = Date.now();
         
-        // 降低距离计算开销
-        const dx = lm[4].x - lm[8].x;
-        const dy = lm[4].y - lm[8].y;
-        const isPinching = (dx*dx + dy*dy) < 0.0064; // 等效于 Math.hypot < 0.08
-        
+        const dx = lm[4].x - lm[8].x, dy = lm[4].y - lm[8].y;
+        const isPinching = (dx*dx + dy*dy) < 0.0064; 
         const isPeace = (lm[8].y < lm[5].y) && (lm[12].y < lm[9].y) && (lm[16].y > lm[13].y);
         const isOne = (lm[8].y < lm[5].y) && (lm[12].y > lm[9].y) && (lm[16].y > lm[13].y);
 
         if (isPeace) { 
             state.isPinched = false;
+            state.hasTriggeredOne = false; // 松开扳机
             if (state.specialPhase === 0) triggerExplosion(); 
         } else if (isPinching) { 
             state.isPinched = true;
+            state.hasTriggeredOne = false; // 松开扳机
             if (state.specialPhase !== 0) { 
                 state.specialPhase = 0; 
                 updateTargetTopology(TARGET_NODES[state.currentIndex]); 
             }
-        } else { 
+        } else if (isOne) { 
             state.isPinched = false;
             if (state.specialPhase !== 0) { 
                 state.specialPhase = 0; 
                 updateTargetTopology(TARGET_NODES[state.currentIndex]); 
             }
-            if (isOne && (now - state.lastSwitchTime > 1500)) {
+            
+            // [优化] 单次物理扳机锁逻辑：仅在首次扣动时击发
+            if (!state.hasTriggeredOne) {
                 state.currentIndex = (state.currentIndex + 1) % TARGET_NODES.length;
                 updateTargetTopology(TARGET_NODES[state.currentIndex]);
-                state.lastSwitchTime = now;
                 sfxSwitchPool.play(0.85); 
+                state.hasTriggeredOne = true; // 物理锁死，杜绝抽搐连发
+            }
+        } else {
+            // [无效状态 / 张开手掌] 重置扳机锁
+            state.isPinched = false;
+            state.hasTriggeredOne = false; // 松开扳机，为下一次击发充能
+            if (state.specialPhase !== 0) { 
+                state.specialPhase = 0; 
+                updateTargetTopology(TARGET_NODES[state.currentIndex]); 
             }
         }
     } else {
+        // [手掌离开镜头] 强制复位
         state.isPinched = false;
+        state.hasTriggeredOne = false; 
         if (state.specialPhase !== 0) { 
             state.specialPhase = 0; 
             updateTargetTopology(TARGET_NODES[state.currentIndex]); 
@@ -379,7 +376,7 @@ hands.onResults((res) => {
     }
 });
 
-// [优化] 神经帧节流锁，防止低端机画面堆积卡死
+// 节流引擎：防低端机画面堆积卡死
 let isProcessingFrame = false;
 const video = document.getElementById('input_video');
 const cam_mp = new window.Camera(video, {
@@ -396,7 +393,7 @@ const cam_mp = new window.Camera(video, {
 window.addEventListener('touchstart', () => { if(state.isIgnited) state.isPinched = true; });
 window.addEventListener('touchend', () => { if(state.isIgnited) state.isPinched = false; });
 
-// [防抖] 横屏旋转事件防抖，彻底解决坐标系偏离
+// [防抖] 保护横竖屏切换安全
 let resizeTimeout;
 function handleResize() {
     clearTimeout(resizeTimeout);
@@ -410,4 +407,4 @@ window.addEventListener('resize', handleResize);
 window.addEventListener('orientationchange', handleResize);
 
 animate();
-cam_mp.start().then(() => console.log("SYS_KERNEL: 光学与推断引擎常驻后台(已优化)"));
+cam_mp.start().then(() => console.log("SYS_KERNEL: 光学与推断引擎(极客版)常驻后台"));
