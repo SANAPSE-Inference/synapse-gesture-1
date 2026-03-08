@@ -1,7 +1,7 @@
 /**
  * @file script.js
- * @version 10.2.0 (Anti-Deadlock Master)
- * @description 终极防抱死版：注入拓扑阻断锁，剔除无效渲染，彻底规避 CPU 热节流。
+ * @version 10.3.0 (Geometry Calibrated Edition)
+ * @description 几何阈值校准：修正反人类的 1.6 标量，还原真实 2D 投影下的手势推断。
  */
 
 'use strict';
@@ -30,11 +30,11 @@ const state = {
     explosionTime: 0,
     isIgnited: false,
     hasTriggeredOne: false,
-    currentTopology: null // [防抱死核心] 当前渲染拓扑锚点
+    currentTopology: null
 };
 
 // ==========================================
-// 2. 原生 I/O 音频引擎 (时间切片)
+// 2. 原生 I/O 音频引擎
 // ==========================================
 const audioBGM = document.getElementById('bgm_audio');
 const audioSwitch = document.getElementById('sfx_switch');
@@ -127,14 +127,13 @@ const particleSystem = new THREE.Points(geometry, material);
 scene.add(particleSystem);
 
 // ==========================================
-// 4. 降维拓扑采样 (注入状态阻断锁)
+// 4. 防抱死拓扑采样矩阵
 // ==========================================
 const osCanvas = document.createElement('canvas');
 osCanvas.width = 512; osCanvas.height = 512;
 const osCtx = osCanvas.getContext('2d'); 
 
 function updateTargetTopology(text) {
-    // [致命修复] 阻断每秒 30 次的冗余计算，保护 CPU 不触发热节流死锁
     if (!state.isIgnited || state.currentTopology === text) return;
     state.currentTopology = text;
 
@@ -188,12 +187,12 @@ function updateTargetTopology(text) {
 }
 
 // ==========================================
-// 5. 熵增爆发引擎
+// 5. 绝对熵增爆发
 // ==========================================
 function triggerExplosion() {
     state.specialPhase = 1;
     state.explosionTime = Date.now();
-    state.currentTopology = "EXPLOSION"; // 破坏锚点，确保回归时能正确重绘
+    state.currentTopology = "EXPLOSION"; 
     playSFX(audioFirework, 0.95);
 
     const colors = [new THREE.Color(0x00FFFF), new THREE.Color(0xFF00FF), new THREE.Color(0x39FF14), new THREE.Color(0xFFD700)];
@@ -272,7 +271,7 @@ function animate() {
 }
 
 // ==========================================
-// 7. 防畸变欧几里得神经推断
+// 7. 防畸变欧几里得神经推断 (核心降维修正)
 // ==========================================
 const video = document.getElementById('input_video');
 const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
@@ -283,8 +282,14 @@ const cam_mp = new window.Camera(video, {
     width: 640, height: 480
 });
 
+// 辅助向量测算
 function getDist(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
-function isExtended(tip, pip, wrist, lm) { return getDist(lm[tip], wrist) > getDist(lm[pip], wrist) * 1.6; } // 高严苛伸展阈值
+
+// 【降维打击】标量乘数从反人类的 1.6 暴降至 1.15。
+// 只要指尖离手腕的距离，稍微大于指节离手腕的距离，即判定为伸直。兼容任何镜头角度畸变！
+function isExtended(tipIdx, pipIdx, wrist, lm) {
+    return getDist(lm[tipIdx], wrist) > getDist(lm[pipIdx], wrist) * 1.15;
+}
 
 hands.onResults((res) => {
     if (!state.isIgnited) return;
@@ -333,7 +338,7 @@ hands.onResults((res) => {
 });
 
 // ==========================================
-// 8. 物理提权与硬点火锁定
+// 8. 物理越权提权点火
 // ==========================================
 document.getElementById('ignition_overlay').addEventListener('click', function() {
     state.isIgnited = true;
@@ -351,12 +356,11 @@ document.getElementById('ignition_overlay').addEventListener('click', function()
     updateTargetTopology(TARGET_NODES[state.currentIndex]);
     document.getElementById('status_text').innerText = "MATRIX_CORE: 神经连接已就绪 | 听觉链路开启";
 
-    // 强行绑定物理点击事件唤醒推断引擎，击穿静默挂起
     cam_mp.start().then(() => {
         console.log("SYS_KERNEL: 摄像头越权捕获成功");
     }).catch((e) => {
         console.error("SYS_ERR: 摄像头静默挂起", e);
-        document.getElementById('status_text').innerText = "SYS_ERR: 传感器物理受阻";
+        document.getElementById('status_text').innerText = "SYS_ERR: 传感器物理受阻 (请使用 Safari/Chrome)";
         document.getElementById('status_text').style.color = "#FF4500";
     });
 });
