@@ -1,7 +1,7 @@
 /**
  * @file style.css
- * @version 10.0.0 (Core Reboot)
- * @description 强制 GPU 硬件加速，绝对触控阻断，零回流重绘边界。
+ * @version 13.0.0 (Native iOS Override Edition)
+ * @description 物理视口绝对锁定，GPU 硬件加速渲染层，剥离全部调试探针。
  */
 
 /* [1] 物理基准对齐：剥离系统冗余回流 */

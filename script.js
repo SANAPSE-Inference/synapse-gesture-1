@@ -1,7 +1,7 @@
 /**
  * @file script.js
- * @version 12.9.0 (Diagnostic Probe Edition)
- * @description 植入底层心跳探针，实时将 AI 状态打印至移动端 UI 界面。
+ * @version 13.0.0 (Native iOS Override Edition)
+ * @description 剔除官方 camera_utils 插件，手写原生 WebRTC 视频流调度，彻底解决 iOS 死锁挂起。
  */
 
 'use strict';
@@ -34,6 +34,7 @@ const state = {
 
 let oneGestureStartTime = 0;
 let isOneGestureActive = false;
+let systemStartTime = 0;
 
 // ==========================================
 // 2. 原生 I/O 音频引擎
@@ -182,11 +183,6 @@ function updateTargetTopology(text) {
     }
     
     geometry.attributes.color.needsUpdate = true;
-    
-    const isSpecial = (state.specialPhase === 2);
-    // [注意：此处被下方的心跳探针覆盖显示，但在坍缩时仍会生效]
-    // uiText.innerText = isSpecial ? "MATRIX_OVERRIDE: 绝对熵减 | 秩序重建" : `NODE: ${state.currentIndex + 1} / 17 | LOCK: ${text}`;
-    // uiText.style.color = isSpecial ? "#FF4500" : "#FFD700";
 }
 
 // ==========================================
@@ -274,44 +270,32 @@ function animate() {
 }
 
 // ==========================================
-// 7. 防墙云端推断与心跳探针注入
+// 7. 终极突围：原生 WebRTC 调度与 AI 引擎
 // ==========================================
 const video = document.getElementById('input_video');
+let lastVideoTime = -1;
 
+// 绑定全局 CDN
 const hands = new window.Hands({locateFile: (file) => `https://unpkg.com/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
 
-const cam_mp = new window.Camera(video, {
-    onFrame: async () => { 
-        if(video.readyState >= 2 && state.isIgnited) {
-            try {
-                await hands.send({image: video});
-            } catch (err) {
-                // 如果 AI 引擎抛出底层异常，强行打印
-                document.getElementById('status_text').innerText = "AI 引擎崩溃: " + err.message;
-                document.getElementById('status_text').style.color = "#FF0000";
-            }
-        } 
-    },
-    width: 640, height: 480
-});
-
+// 几何推断器
 function getDist(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
 function isExtended(tipIdx, pipIdx, wrist, lm) {
     return getDist(lm[tipIdx], wrist) > getDist(lm[pipIdx], wrist) * 1.15; 
 }
 
+// AI 神经回调
 hands.onResults((res) => {
     if (!state.isIgnited) return;
 
-    // [心跳探针]：接管底部 UI，汇报 AI 视觉状态
-    const uiText = document.getElementById('status_text');
+    // [心跳探针]
     if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
         uiText.innerText = `[AI 脉搏]：已锁定 ${res.multiHandLandmarks.length} 只手`;
-        uiText.style.color = "#39FF14"; // 绿色
+        uiText.style.color = "#39FF14"; // 识别成功呈绿色
     } else {
         uiText.innerText = "[AI 脉搏]：画面扫描中，未发现骨骼点...";
-        uiText.style.color = "#FFD700"; // 黄色
+        uiText.style.color = "#FFD700"; // 寻猎状态呈黄色
     }
 
     if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
@@ -362,6 +346,45 @@ hands.onResults((res) => {
     }
 });
 
+// [手写核心] 原生 WebRTC 帧泵 (Frame Pump)
+async function processVideoFrame() {
+    if (!state.isIgnited) return;
+    
+    // 仅在视频流有新画面时，才将画面喂给 AI
+    if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        try {
+            await hands.send({image: video});
+        } catch (err) {
+            uiText.innerText = "AI 引擎挂起: " + err.message;
+            uiText.style.color = "#FF4500";
+        }
+    }
+    // 递归调用，形成永动循环
+    requestAnimationFrame(processVideoFrame);
+}
+
+// 启动底层相机硬件
+async function startNativeCamera() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+            audio: false
+        });
+        video.srcObject = stream;
+        video.play();
+        
+        // 当视频流开始播放时，启动帧泵
+        video.onloadeddata = () => {
+            console.log("SYS_KERNEL: 原生相机流已捕获");
+            processVideoFrame(); 
+        };
+    } catch (e) {
+        uiText.innerText = "错误：系统已拒绝摄像头权限";
+        uiText.style.color = "#FF4500";
+    }
+}
+
 // ==========================================
 // 8. 物理越权提权点火
 // ==========================================
@@ -369,6 +392,7 @@ document.getElementById('ignition_overlay').addEventListener('click', function()
     state.isIgnited = true;
     this.style.opacity = '0';
     setTimeout(() => this.style.display = 'none', 600);
+    systemStartTime = Date.now();
     
     if (audioBGM) {
         audioBGM.volume = 0.65;
@@ -379,15 +403,10 @@ document.getElementById('ignition_overlay').addEventListener('click', function()
     if (audioFirework) { audioFirework.volume = 0; audioFirework.play().then(()=>audioFirework.pause()).catch(()=>{}); }
     
     updateTargetTopology(TARGET_NODES[state.currentIndex]);
-    document.getElementById('status_text').innerText = "MATRIX_CORE: 正在唤醒神经中枢...";
+    uiText.innerText = "MATRIX_CORE: 正在唤醒底层硬件...";
 
-    cam_mp.start().then(() => {
-        console.log("SYS_KERNEL: 云端推断模型连接成功");
-    }).catch((e) => {
-        console.error("SYS_ERR: 摄像头静默挂起", e);
-        document.getElementById('status_text').innerText = "SYS_ERR: 传感器物理受阻";
-        document.getElementById('status_text').style.color = "#FF4500";
-    });
+    // 执行原生硬件挂载
+    startNativeCamera();
 });
 
 window.addEventListener('touchstart', () => { if(state.isIgnited) state.isPinched = true; });
