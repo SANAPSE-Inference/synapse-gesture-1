@@ -1,13 +1,13 @@
 /**
  * @file script.js
- * @version 10.0.0 (Zero-Base Core Reboot)
- * @description 核心重启：欧几里得距离抽象、原生音频切片、极简状态机与引力赋权。
+ * @version 10.2.0 (Anti-Deadlock Master)
+ * @description 终极防抱死版：注入拓扑阻断锁，剔除无效渲染，彻底规避 CPU 热节流。
  */
 
 'use strict';
 
 // ==========================================
-// 1. 全局配置与极简状态矩阵
+// 1. 全局配置与状态矩阵
 // ==========================================
 const TARGET_NODES = ["刘磊", "陈鼎元", "陈子豪", "董奕斐", "顾曼妮", "古苗苗", "郭苏仪", "姬翔", "刘子慕", "李文轩", "李一鸣", "吕润柳", "孙垚博", "徐薇", "燕子楚齐", "郑雅今", "朱付晴晴"];
 const SPECIAL_NODE = "祝大家\n前程似锦！！";
@@ -19,23 +19,23 @@ const CONFIG = {
     GRAVITY_STRENGTH: 0.045,
     ROTATION_IDLE: 0.005,
     CAMERA_Z: 650,
-    EXPLOSION_DURATION: 3000 // 绝对爆裂常数 (ms)
+    EXPLOSION_DURATION: 3000
 };
 
 const state = {
     currentIndex: 0,
     isPinched: false,
-    isOneGesture: false,   // 维持展示态的引力锁
-    specialPhase: 0,       // 0: 待机/游走/有序, 1: 爆裂, 2: 绝对收束
+    isOneGesture: false,
+    specialPhase: 0, 
     explosionTime: 0,
     isIgnited: false,
-    hasTriggeredOne: false // 单次物理扳机锁，杜绝连发
+    hasTriggeredOne: false,
+    currentTopology: null // [防抱死核心] 当前渲染拓扑锚点
 };
 
 // ==========================================
-// 2. 原生 I/O 音频引擎 (时间切片降维)
+// 2. 原生 I/O 音频引擎 (时间切片)
 // ==========================================
-// 绝对禁止 JS 动态生成与克隆，直接接管 HTML 底层节点
 const audioBGM = document.getElementById('bgm_audio');
 const audioSwitch = document.getElementById('sfx_switch');
 const audioFirework = document.getElementById('sfx_firework');
@@ -43,32 +43,13 @@ const audioFirework = document.getElementById('sfx_firework');
 function playSFX(audioElement, volume = 1.0) {
     if (!audioElement) return;
     audioElement.pause();
-    audioElement.currentTime = 0; // 时间切片归零，极速复用单例，零 GC 开销
+    audioElement.currentTime = 0; 
     audioElement.volume = volume;
     audioElement.play().catch(() => {});
 }
 
-// 物理点火锁解禁
-document.getElementById('ignition_overlay').addEventListener('click', function() {
-    state.isIgnited = true;
-    this.style.opacity = '0';
-    setTimeout(() => this.style.display = 'none', 600);
-    
-    if(audioBGM) {
-        audioBGM.volume = 0.65;
-        audioBGM.play().catch(() => {});
-    }
-    
-    // 静默颁发 iOS 播放许可 (极简复苏协议)
-    if(audioSwitch) { audioSwitch.volume = 0; audioSwitch.play().then(()=>audioSwitch.pause()).catch(()=>{}); }
-    if(audioFirework) { audioFirework.volume = 0; audioFirework.play().then(()=>audioFirework.pause()).catch(()=>{}); }
-    
-    updateTargetTopology(TARGET_NODES[state.currentIndex]);
-    document.getElementById('status_text').innerText = "MATRIX_CORE: 神经连接已就绪 | 听觉链路开启";
-});
-
 // ==========================================
-// 3. WebGL 渲染管线与高能星核内存预分配
+// 3. WebGL 渲染管线与星核分配
 // ==========================================
 const canvas = document.getElementById('output_canvas');
 const uiText = document.getElementById('status_text');
@@ -146,14 +127,16 @@ const particleSystem = new THREE.Points(geometry, material);
 scene.add(particleSystem);
 
 // ==========================================
-// 4. 稳健拓扑降维采样 (彻底剥离设备崩溃指令)
+// 4. 降维拓扑采样 (注入状态阻断锁)
 // ==========================================
 const osCanvas = document.createElement('canvas');
 osCanvas.width = 512; osCanvas.height = 512;
 const osCtx = osCanvas.getContext('2d'); 
 
 function updateTargetTopology(text) {
-    if (!state.isIgnited) return;
+    // [致命修复] 阻断每秒 30 次的冗余计算，保护 CPU 不触发热节流死锁
+    if (!state.isIgnited || state.currentTopology === text) return;
+    state.currentTopology = text;
 
     osCtx.fillStyle = '#000'; osCtx.fillRect(0, 0, 512, 512);
     osCtx.fillStyle = '#FFF';
@@ -189,7 +172,6 @@ function updateTargetTopology(text) {
         }
     }
 
-    // 冗余散落与颜色清洗
     for (let i = bgLimit + pIdx; i < total; i++) {
         const i3 = i * 3;
         targetArray[i3] = baseArray[i3] * 0.1;
@@ -206,11 +188,12 @@ function updateTargetTopology(text) {
 }
 
 // ==========================================
-// 5. 绝对熵增爆发
+// 5. 熵增爆发引擎
 // ==========================================
 function triggerExplosion() {
     state.specialPhase = 1;
     state.explosionTime = Date.now();
+    state.currentTopology = "EXPLOSION"; // 破坏锚点，确保回归时能正确重绘
     playSFX(audioFirework, 0.95);
 
     const colors = [new THREE.Color(0x00FFFF), new THREE.Color(0xFF00FF), new THREE.Color(0x39FF14), new THREE.Color(0xFFD700)];
@@ -232,7 +215,7 @@ function triggerExplosion() {
 }
 
 // ==========================================
-// 6. 物理主渲染循环
+// 6. 主渲染循环
 // ==========================================
 function animate() {
     requestAnimationFrame(animate);
@@ -241,7 +224,6 @@ function animate() {
     const time = Date.now() * 0.001;
     const nowMs = Date.now();
     
-    // 【绝对赋权】捏合、展示一、系统重写阶段，均执行引力坍缩
     const isOrdered = state.isPinched || state.isOneGesture || state.specialPhase === 2;
     
     material.size += ((isOrdered ? 12.0 : 9.0) - material.size) * 0.15;
@@ -260,11 +242,9 @@ function animate() {
         const ix = i * 3, iy = ix + 1, iz = ix + 2; 
         
         if (i >= bgLimit && state.specialPhase === 1) {
-            // 惯性抛射计算
             pos[ix] += vel[ix]; pos[iy] += vel[iy]; pos[iz] += vel[iz];
             vel[ix] *= 0.96; vel[iy] *= 0.96; vel[iz] *= 0.96;
         } else {
-            // 引力场积分计算
             const isBG = i < bgLimit;
             const speed = isBG ? gravSpeed : (isOrdered ? orderedSpeed : gravSpeed);
             const angle = time + phase[i];
@@ -292,37 +272,34 @@ function animate() {
 }
 
 // ==========================================
-// 7. 欧几里得空间神经推断引擎
+// 7. 防畸变欧几里得神经推断
 // ==========================================
+const video = document.getElementById('input_video');
 const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
 
-// 辅助向量测算：规避移动端摄像头畸变及手腕俯仰角误判
-function getDist(p1, p2) {
-    return Math.hypot(p1.x - p2.x, p1.y - p2.y);
-}
+const cam_mp = new window.Camera(video, {
+    onFrame: async () => { if(video.readyState >= 2 && state.isIgnited) await hands.send({image: video}); },
+    width: 640, height: 480
+});
 
-// 严苛伸展阈值设定：标量乘数提升至 1.6，绝对拦截松弛手指
-function isExtended(tipIdx, pipIdx, wrist, lm) {
-    return getDist(lm[tipIdx], wrist) > getDist(lm[pipIdx], wrist) * 1.6;
-}
+function getDist(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
+function isExtended(tip, pip, wrist, lm) { return getDist(lm[tip], wrist) > getDist(lm[pip], wrist) * 1.6; } // 高严苛伸展阈值
 
 hands.onResults((res) => {
     if (!state.isIgnited) return;
 
     if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
         const lm = res.multiHandLandmarks[0];
-        const wrist = lm[0]; // 根节点锚定
+        const wrist = lm[0]; 
         
         const isPinching = getDist(lm[4], lm[8]) < 0.08; 
         
-        // 基于标量比值的绝缘判定
         const indexUp = isExtended(8, 6, wrist, lm);
         const middleUp = isExtended(12, 10, wrist, lm);
         const ringUp = isExtended(16, 14, wrist, lm);
         const pinkyUp = isExtended(20, 18, wrist, lm);
 
-        // 数学动作映射矩阵
         const isPeace = indexUp && middleUp && !ringUp && !pinkyUp && !isPinching;
         const isOne = indexUp && !middleUp && !ringUp && !pinkyUp && !isPinching;
 
@@ -335,10 +312,9 @@ hands.onResults((res) => {
             if (state.specialPhase !== 0) { state.specialPhase = 0; updateTargetTopology(TARGET_NODES[state.currentIndex]); }
         } 
         else if (isOne) { 
-            state.isPinched = false; state.isOneGesture = true; // 引力激活锁
+            state.isPinched = false; state.isOneGesture = true; 
             if (state.specialPhase !== 0) { state.specialPhase = 0; updateTargetTopology(TARGET_NODES[state.currentIndex]); }
             
-            // 物理扳机约束：禁止机枪式扫射
             if (!state.hasTriggeredOne) {
                 state.currentIndex = (state.currentIndex + 1) % TARGET_NODES.length;
                 updateTargetTopology(TARGET_NODES[state.currentIndex]);
@@ -347,22 +323,42 @@ hands.onResults((res) => {
             }
         } 
         else {
-            // 张开手掌或废弃手势
             state.isPinched = false; state.isOneGesture = false; state.hasTriggeredOne = false; 
             if (state.specialPhase === 0) updateTargetTopology(TARGET_NODES[state.currentIndex]); 
         }
     } else {
-        // 空白视野重置
         state.isPinched = false; state.isOneGesture = false; state.hasTriggeredOne = false; 
         if (state.specialPhase === 0) updateTargetTopology(TARGET_NODES[state.currentIndex]); 
     }
 });
 
-const video = document.getElementById('input_video');
-const cam_mp = new window.Camera(video, {
-    // 移除导致死锁的 try/catch 节流，交由 MediaPipe 底层 C++ 模块原生调度
-    onFrame: async () => { if(video.readyState >= 2 && state.isIgnited) await hands.send({image: video}); },
-    width: 640, height: 480
+// ==========================================
+// 8. 物理提权与硬点火锁定
+// ==========================================
+document.getElementById('ignition_overlay').addEventListener('click', function() {
+    state.isIgnited = true;
+    this.style.opacity = '0';
+    setTimeout(() => this.style.display = 'none', 600);
+    
+    if (audioBGM) {
+        audioBGM.volume = 0.65;
+        audioBGM.play().catch(() => {});
+    }
+    
+    if (audioSwitch) { audioSwitch.volume = 0; audioSwitch.play().then(()=>audioSwitch.pause()).catch(()=>{}); }
+    if (audioFirework) { audioFirework.volume = 0; audioFirework.play().then(()=>audioFirework.pause()).catch(()=>{}); }
+    
+    updateTargetTopology(TARGET_NODES[state.currentIndex]);
+    document.getElementById('status_text').innerText = "MATRIX_CORE: 神经连接已就绪 | 听觉链路开启";
+
+    // 强行绑定物理点击事件唤醒推断引擎，击穿静默挂起
+    cam_mp.start().then(() => {
+        console.log("SYS_KERNEL: 摄像头越权捕获成功");
+    }).catch((e) => {
+        console.error("SYS_ERR: 摄像头静默挂起", e);
+        document.getElementById('status_text').innerText = "SYS_ERR: 传感器物理受阻";
+        document.getElementById('status_text').style.color = "#FF4500";
+    });
 });
 
 window.addEventListener('touchstart', () => { if(state.isIgnited) state.isPinched = true; });
@@ -380,4 +376,3 @@ window.addEventListener('resize', () => {
 window.addEventListener('orientationchange', () => window.dispatchEvent(new Event('resize')));
 
 animate();
-cam_mp.start().then(() => console.log("MATRIX_CORE: 欧几里得推断与引力模型部署完毕"));

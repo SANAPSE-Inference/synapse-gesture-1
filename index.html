@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Synapse Matrix V10 | Core Reboot</title>
+    <title>Synapse Matrix V10.1 | Hardware Override</title>
     
     <link rel="stylesheet" href="style.css">
     
@@ -14,18 +14,18 @@
 </head>
 <body>
     <audio id="bgm_audio" loop preload="auto">
-        <source src="bgm.mp3?v=v10.0_stable" type="audio/mpeg">
+        <source src="bgm.mp3?v=v10.1_stable" type="audio/mpeg">
     </audio>
     
     <audio id="sfx_switch" preload="auto">
-        <source src="switch.mp3?v=v10.0_stable" type="audio/mpeg">
+        <source src="switch.mp3?v=v10.1_stable" type="audio/mpeg">
     </audio>
     
     <audio id="sfx_firework" preload="auto">
-        <source src="firework.mp3?v=v10.0_stable" type="audio/mpeg">
+        <source src="firework.mp3?v=v10.1_stable" type="audio/mpeg">
     </audio>
 
-    <video id="input_video" playsinline webkit-playsinline autoplay muted style="display: none;"></video>
+    <video id="input_video" playsinline webkit-playsinline autoplay muted style="position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; z-index: -1;"></video>
     
     <canvas id="output_canvas"></canvas>
     
