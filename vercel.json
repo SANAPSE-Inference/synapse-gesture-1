@@ -1,11 +1,21 @@
 {
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/(.*).wasm",
       "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Content-Type", "value": "application/wasm", "regex": ".*\\.wasm$" },
-        { "key": "Content-Type", "value": "application/octet-stream", "regex": ".*\\.data$" }
+        {
+          "key": "Content-Type",
+          "value": "application/wasm"
+        }
+      ]
+    },
+    {
+      "source": "/(.*).data",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/octet-stream"
+        }
       ]
     }
   ]
