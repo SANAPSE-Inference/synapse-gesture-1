@@ -1,13 +1,13 @@
 /**
  * @file script.js
- * @version 8.0.0 (Elegance & Performance Edition)
- * @description 终极交付版：单次物理扳机锁、动态音频缓存击穿、零GC字模采样。
+ * @version 8.1.0 (Flawless Master)
+ * @description 严苛审计版：修复单帧双重重绘、色彩泄漏、小拇指判定盲区、静态缓存刺客。
  */
 
 'use strict';
 
 // ==========================================
-// 1. 全局配置与状态机矩阵
+// 1. 全局配置与状态机
 // ==========================================
 const TARGET_NODES = ["刘磊", "陈鼎元", "陈子豪", "董奕斐", "顾曼妮", "古苗苗", "郭苏仪", "姬翔", "刘子慕", "李文轩", "李一鸣", "吕润柳", "孙垚博", "徐薇", "燕子楚齐", "郑雅今", "朱付晴晴"];
 const SPECIAL_NODE = "祝大家\n前程似锦！！";
@@ -19,7 +19,7 @@ const CONFIG = {
     GRAVITY_STRENGTH: 0.045,
     ROTATION_IDLE: 0.005,
     CAMERA_Z: 650,
-    EXPLOSION_DURATION: 3000 // 烟花绚丽停留 3 秒
+    EXPLOSION_DURATION: 3000 
 };
 
 const state = {
@@ -28,11 +28,11 @@ const state = {
     specialPhase: 0, 
     explosionTime: 0,
     isIgnited: false,
-    hasTriggeredOne: false // [优化] 单次物理扳机锁，杜绝连续触发
+    hasTriggeredOne: false 
 };
 
 // ==========================================
-// 2. 高性能音频并发池与缓存刺客
+// 2. 音频并发池与温和缓存刺客
 // ==========================================
 class AudioRingBuffer {
     constructor(elementId, poolSize = 3) {
@@ -41,8 +41,8 @@ class AudioRingBuffer {
         const template = document.getElementById(elementId);
         if (template) {
             let src = template.querySelector('source').src;
-            // [优化] 缓存刺客：强制注入版本后缀，击穿移动端陈旧的音频缓存
-            const cacheBuster = `?v=update_${Date.now()}`;
+            // [修复] 使用固定版本号击穿陈旧缓存，同时保留合理的后续网络缓存能力
+            const cacheBuster = `?v=final_1.0`;
             src = src.includes('?') ? src.replace(/\?.*$/, cacheBuster) : src + cacheBuster;
             
             for (let i = 0; i < poolSize; i++) {
@@ -53,7 +53,6 @@ class AudioRingBuffer {
         }
     }
 
-    // 突破 iOS Autoplay 限制的批量静默解锁
     unlockAll() {
         this.pool.forEach(audio => {
             audio.volume = 0;
@@ -76,7 +75,6 @@ const bgmAudio = document.getElementById('bgm_audio');
 const sfxSwitchPool = new AudioRingBuffer('sfx_switch', 4);     
 const sfxFireworkPool = new AudioRingBuffer('sfx_firework', 2); 
 
-// 物理点火锁解禁
 document.getElementById('ignition_overlay').addEventListener('click', function() {
     state.isIgnited = true;
     this.style.opacity = '0';
@@ -93,7 +91,7 @@ document.getElementById('ignition_overlay').addEventListener('click', function()
 });
 
 // ==========================================
-// 3. WebGL 核心管线与高亮星核内存分配
+// 3. WebGL 管线与高能星核初始化
 // ==========================================
 const canvas = document.getElementById('output_canvas');
 const uiText = document.getElementById('status_text');
@@ -141,7 +139,6 @@ for (let i = 0; i < total; i++) {
         baseArray[i3 + 1] = (Math.random() - 0.5) * 4000;
         baseArray[i3 + 2] = (Math.random() - 0.5) * 800 - 200; 
     } else {
-        // [极亮星核] 半径收缩至 140，提升初始能量密度
         const r = 140 * Math.cbrt(Math.random());
         const theta = Math.random() * 2 * Math.PI;
         const phi = Math.acos(2 * Math.random() - 1);
@@ -159,7 +156,7 @@ geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
 geometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
 
 const material = new THREE.PointsMaterial({
-    size: 9.0, // 初始高光质感
+    size: 9.0, 
     map: createGlowTexture(),
     blending: THREE.AdditiveBlending,
     depthWrite: false,
@@ -171,7 +168,7 @@ const particleSystem = new THREE.Points(geometry, material);
 scene.add(particleSystem);
 
 // ==========================================
-// 4. 降维拓扑采样引擎 (512x512 算力骤减 75%)
+// 4. 降维拓扑采样引擎 (512x512)
 // ==========================================
 const osCanvas = document.createElement('canvas');
 osCanvas.width = 512; osCanvas.height = 512;
@@ -215,11 +212,15 @@ function updateTargetTopology(text) {
         }
     }
 
+    // [修复] 强制清除背景冗余粒子的残留色彩，根绝色彩泄漏污染
     for (let i = bgLimit + pIdx; i < total; i++) {
         const i3 = i * 3;
         targetArray[i3] = baseArray[i3] * 0.1;
         targetArray[i3 + 1] = baseArray[i3 + 1] * 0.1;
         targetArray[i3 + 2] = baseArray[i3 + 2] * 0.1 - 100;
+        
+        // 核心修复行：让退到背景的粒子恢复金黄纯色
+        colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
     }
     
     geometry.attributes.color.needsUpdate = true;
@@ -257,7 +258,7 @@ function triggerExplosion() {
 }
 
 // ==========================================
-// 6. 主渲染循环 (局部变量强力缓存)
+// 6. 主渲染循环
 // ==========================================
 function animate() {
     requestAnimationFrame(animate);
@@ -278,7 +279,6 @@ function animate() {
     const bgLimit = CONFIG.BG_PARTICLES;
     const orderedSpeed = CONFIG.COLLAPSE_SPEED;
     const gravSpeed = CONFIG.GRAVITY_STRENGTH;
-    
     const pos = posArray, target = targetArray, base = baseArray, phase = phaseArray, vel = velocityArray;
 
     for (let i = 0; i < total; i++) {
@@ -315,7 +315,7 @@ function animate() {
 }
 
 // ==========================================
-// 7. 神经视觉推断与绝对互斥状态机
+// 7. 神经推断引擎与防卡顿互斥逻辑
 // ==========================================
 const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
@@ -328,45 +328,51 @@ hands.onResults((res) => {
         
         const dx = lm[4].x - lm[8].x, dy = lm[4].y - lm[8].y;
         const isPinching = (dx*dx + dy*dy) < 0.0064; 
-        const isPeace = (lm[8].y < lm[5].y) && (lm[12].y < lm[9].y) && (lm[16].y > lm[13].y);
-        const isOne = (lm[8].y < lm[5].y) && (lm[12].y > lm[9].y) && (lm[16].y > lm[13].y);
+        
+        // [修复] 补齐小拇指(lm[20])的检测闭环，彻底根绝“蜘蛛侠手势”导致的串台误触
+        const isPeace = (lm[8].y < lm[5].y) && (lm[12].y < lm[9].y) && (lm[16].y > lm[13].y) && (lm[20].y > lm[17].y);
+        const isOne = (lm[8].y < lm[5].y) && (lm[12].y > lm[9].y) && (lm[16].y > lm[13].y) && (lm[20].y > lm[17].y);
+
+        let needsTopologyUpdate = false; // [修复] 单帧绘制聚合锁，杜绝双重重绘引发的卡顿
 
         if (isPeace) { 
             state.isPinched = false;
-            state.hasTriggeredOne = false; // 松开扳机
+            state.hasTriggeredOne = false; 
             if (state.specialPhase === 0) triggerExplosion(); 
         } else if (isPinching) { 
             state.isPinched = true;
-            state.hasTriggeredOne = false; // 松开扳机
+            state.hasTriggeredOne = false; 
             if (state.specialPhase !== 0) { 
                 state.specialPhase = 0; 
-                updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+                needsTopologyUpdate = true;
             }
         } else if (isOne) { 
             state.isPinched = false;
             if (state.specialPhase !== 0) { 
                 state.specialPhase = 0; 
-                updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+                needsTopologyUpdate = true;
             }
-            
-            // [优化] 单次物理扳机锁逻辑：仅在首次扣动时击发
             if (!state.hasTriggeredOne) {
                 state.currentIndex = (state.currentIndex + 1) % TARGET_NODES.length;
-                updateTargetTopology(TARGET_NODES[state.currentIndex]);
                 sfxSwitchPool.play(0.85); 
-                state.hasTriggeredOne = true; // 物理锁死，杜绝抽搐连发
+                state.hasTriggeredOne = true; 
+                needsTopologyUpdate = true;
             }
         } else {
-            // [无效状态 / 张开手掌] 重置扳机锁
             state.isPinched = false;
-            state.hasTriggeredOne = false; // 松开扳机，为下一次击发充能
+            state.hasTriggeredOne = false; 
             if (state.specialPhase !== 0) { 
                 state.specialPhase = 0; 
-                updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+                needsTopologyUpdate = true;
             }
         }
+
+        // 统一合并重绘指令
+        if (needsTopologyUpdate) {
+            updateTargetTopology(TARGET_NODES[state.currentIndex]); 
+        }
+
     } else {
-        // [手掌离开镜头] 强制复位
         state.isPinched = false;
         state.hasTriggeredOne = false; 
         if (state.specialPhase !== 0) { 
@@ -376,7 +382,6 @@ hands.onResults((res) => {
     }
 });
 
-// 节流引擎：防低端机画面堆积卡死
 let isProcessingFrame = false;
 const video = document.getElementById('input_video');
 const cam_mp = new window.Camera(video, {
@@ -393,7 +398,6 @@ const cam_mp = new window.Camera(video, {
 window.addEventListener('touchstart', () => { if(state.isIgnited) state.isPinched = true; });
 window.addEventListener('touchend', () => { if(state.isIgnited) state.isPinched = false; });
 
-// [防抖] 保护横竖屏切换安全
 let resizeTimeout;
 function handleResize() {
     clearTimeout(resizeTimeout);
@@ -407,4 +411,4 @@ window.addEventListener('resize', handleResize);
 window.addEventListener('orientationchange', handleResize);
 
 animate();
-cam_mp.start().then(() => console.log("SYS_KERNEL: 光学与推断引擎(极客版)常驻后台"));
+cam_mp.start().then(() => console.log("SYS_KERNEL: 极致安全校验版部署完毕"));
