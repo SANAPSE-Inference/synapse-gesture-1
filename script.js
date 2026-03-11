@@ -1,7 +1,7 @@
 /**
  * @file script.js
- * @version 13.0.0 (Native iOS Override Edition)
- * @description 剔除官方 camera_utils 插件，手写原生 WebRTC 视频流调度，彻底解决 iOS 死锁挂起。
+ * @version 13.0.0 (Native iOS Override + Eleme CDN)
+ * @description 剔除官方 camera_utils，手写原生 WebRTC 视频流调度，并直连国内镜像节点。
  */
 
 'use strict';
@@ -275,8 +275,8 @@ function animate() {
 const video = document.getElementById('input_video');
 let lastVideoTime = -1;
 
-// 绑定全局 CDN
-const hands = new window.Hands({locateFile: (file) => `https://unpkg.com/@mediapipe/hands/${file}`});
+// 核心替换：绑定国内饿了么极速 CDN 节点拉取模型
+const hands = new window.Hands({locateFile: (file) => `https://npm.elemecdn.com/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
 
 // 几何推断器
