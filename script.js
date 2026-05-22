@@ -15,7 +15,7 @@ const TARGET_NODES = [
     "时代脉搏\n由我发声"
 ];
 // 最后的隐藏彩蛋（双手比 V 触发）
-const SPECIAL_NODE = "南传\n生生不息";
+const SPECIAL_NODE = "南传\n声声不息";
 
 const CONFIG = {
     TOTAL_PARTICLES: 14000,
