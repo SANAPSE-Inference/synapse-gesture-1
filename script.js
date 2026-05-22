@@ -1,20 +1,19 @@
 /**
  * @file script.js
- * @version 13.1.0 (NUC Stage Edition - 南传晚会特供版)
- * @description 融合南传立意箴言，全量代码物理覆盖，确保零风险雪崩。
+ * @version 13.0.0 (Native iOS Override Edition)
+ * @description 剔除官方 camera_utils 插件，手写原生 WebRTC 视频流调度，彻底解决 iOS 死锁挂起。
  */
 
 'use strict';
 
 // ==========================================
-// 1. 全局配置与状态矩阵 (已注入南传晚会文案)
+// 1. 全局配置与状态矩阵
 // ==========================================
 const TARGET_NODES = [
     "聚光南传\n传声筑梦", 
     "虚实无界\n智育新篇", 
     "时代脉搏\n由我发声"
 ];
-// 最后的隐藏彩蛋（双手比 V 触发）
 const SPECIAL_NODE = "南传\n声声不息";
 
 const CONFIG = {
@@ -144,6 +143,7 @@ const osCtx = osCanvas.getContext('2d');
 function updateTargetTopology(text) {
     if (!state.isIgnited || state.currentTopology === text) return;
     state.currentTopology = text;
+    uiText.innerText = state.specialPhase===2 ? "MATRIX: 秩序重建" : `NODE: ${state.currentIndex+1} / ${TARGET_NODES.length} | LOCK: ${text.replace(/\n/g, ' ')}`;
 
     osCtx.fillStyle = '#000'; osCtx.fillRect(0, 0, 512, 512);
     osCtx.fillStyle = '#FFF';
@@ -280,8 +280,8 @@ function animate() {
 const video = document.getElementById('input_video');
 let lastVideoTime = -1;
 
-// 核心替换：绑定国内饿了么极速 CDN 节点拉取模型
-const hands = new window.Hands({locateFile: (file) => `https://npm.elemecdn.com/@mediapipe/hands/${file}`});
+// 绑定全局 CDN
+const hands = new window.Hands({locateFile: (file) => `https://unpkg.com/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
 
 // 几何推断器
