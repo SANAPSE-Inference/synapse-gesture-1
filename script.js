@@ -1,16 +1,21 @@
 /**
  * @file script.js
- * @version 13.0.0 (Native iOS Override Edition)
- * @description 剔除官方 camera_utils 插件，手写原生 WebRTC 视频流调度，彻底解决 iOS 死锁挂起。
+ * @version 13.1.0 (NUC Stage Edition - 南传晚会特供版)
+ * @description 融合南传立意箴言，全量代码物理覆盖，确保零风险雪崩。
  */
 
 'use strict';
 
 // ==========================================
-// 1. 全局配置与状态矩阵
+// 1. 全局配置与状态矩阵 (已注入南传晚会文案)
 // ==========================================
-const TARGET_NODES = ["刘磊", "陈鼎元", "陈子豪", "董奕斐", "顾曼妮", "古苗苗", "郭苏仪", "姬翔", "刘子慕", "李文轩", "李一鸣", "吕润柳", "孙垚博", "徐薇", "燕子楚齐", "郑雅今", "朱付晴晴"];
-const SPECIAL_NODE = "祝大家\n前程似锦！！";
+const TARGET_NODES = [
+    "聚光南传\n传声筑梦", 
+    "虚实无界\n智育新篇", 
+    "时代脉搏\n由我发声"
+];
+// 最后的隐藏彩蛋（双手比 V 触发）
+const SPECIAL_NODE = "南传\n生生不息";
 
 const CONFIG = {
     TOTAL_PARTICLES: 14000,
@@ -275,8 +280,8 @@ function animate() {
 const video = document.getElementById('input_video');
 let lastVideoTime = -1;
 
-// 绑定全局 CDN
-const hands = new window.Hands({locateFile: (file) => `https://unpkg.com/@mediapipe/hands/${file}`});
+// 核心替换：绑定国内饿了么极速 CDN 节点拉取模型
+const hands = new window.Hands({locateFile: (file) => `https://npm.elemecdn.com/@mediapipe/hands/${file}`});
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.65, minTrackingConfidence: 0.65 });
 
 // 几何推断器
