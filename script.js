@@ -14,7 +14,7 @@ const TARGET_NODES = [
     "虚实无界\n智育新篇", 
     "时代脉搏\n由我发声"
 ];
-const SPECIAL_NODE = "南传\n声声不息";
+const SPECIAL_NODE = "感恩";
 
 const CONFIG = {
     TOTAL_PARTICLES: 14000,
@@ -169,8 +169,8 @@ function updateTargetTopology(text) {
                 const targetI = bgLimit + pIdx;
                 if (targetI < total) {
                     const i3 = targetI * 3;
-                    targetArray[i3] = (x - 256) * 2.7 + (Math.random() - 0.5) * 3;
-                    targetArray[i3 + 1] = -(y - 256) * 2.7 + (Math.random() - 0.5) * 3;
+                    targetArray[i3] = (x - 256) * 1.5 + (Math.random() - 0.5) * 3;
+                    targetArray[i3 + 1] = -(y - 256) * 1.5 + (Math.random() - 0.5) * 3;
                     targetArray[i3 + 2] = (Math.random() - 0.5) * 10 + 280; 
                     colorArray[i3] = colorBase.r; colorArray[i3+1] = colorBase.g; colorArray[i3+2] = colorBase.b;
                     pIdx++;
